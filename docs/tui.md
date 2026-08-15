@@ -8,7 +8,7 @@
 
 1. 지원 OS와 user service 환경 검사
 2. Hub base URL 입력, discovery와 protocol 검사
-3. 기본값 없는 Agent Identity 입력, Mesh 전체 중복 조회, 내부 lane ID 자동 생성, runtime과 workspace 선택
+3. 기본값 없는 Agent Identity 입력, Mesh 전체 중복 조회, 내부 lane ID 자동 생성, 키보드 선택형 CLI Runtime과 workspace 선택
 4. 선택 Runtime CLI, 인증과 capability 검사
 5. lane별 보안 정책 선택 및 영향 확인
 6. 선택 Channel Driver와 credential 설정

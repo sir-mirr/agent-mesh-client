@@ -33,6 +33,82 @@ async function ask(reader: Reader, prompt: string, fallback?: string): Promise<s
   return answer || fallback || "";
 }
 
+interface HorizontalChoice<T extends string> {
+  value: T;
+  label: string;
+}
+
+export function moveSelection(index: number, count: number, delta: number): number {
+  if (count <= 0) throw new Error("Selection requires at least one choice");
+  return (index + delta + count) % count;
+}
+
+async function selectHorizontal<T extends string>(
+  reader: Reader,
+  prompt: string,
+  choices: readonly HorizontalChoice<T>[],
+  initialIndex = 0,
+): Promise<T> {
+  const initial = choices[initialIndex];
+  if (!initial) throw new Error("Selection has no initial choice");
+  const stdin = process.stdin;
+  if (!stdin.isTTY || !process.stdout.isTTY || typeof stdin.setRawMode !== "function") {
+    const answer = await ask(
+      reader,
+      `${prompt} (${choices.map((choice) => choice.label).join("/")})`,
+      initial.label,
+    );
+    return choices.find((choice) => choice.label.toLowerCase() === answer.toLowerCase())?.value ??
+      initial.value;
+  }
+
+  reader.pause();
+  const previousRawMode = stdin.isRaw;
+  stdin.setRawMode(true);
+  stdin.resume();
+  let selected = initialIndex;
+
+  const render = () => {
+    const rendered = choices.map((choice, index) =>
+      index === selected
+        ? `\u001b[7m[${choice.label}]\u001b[0m`
+        : `[${choice.label}]`
+    ).join(" ");
+    process.stdout.write(`\r\u001b[2K${prompt}: ${rendered}`);
+  };
+
+  return await new Promise<T>((resolveChoice, reject) => {
+    const cleanup = () => {
+      stdin.off("data", onData);
+      stdin.setRawMode(previousRawMode);
+      reader.resume();
+    };
+    const onData = (chunk: Buffer | string) => {
+      const key = chunk.toString();
+      if (key === "\u0003") {
+        cleanup();
+        process.stdout.write("\n");
+        reject(new Error("Selection cancelled"));
+        return;
+      }
+      if (key === "\r" || key === "\n") {
+        const choice = choices[selected]!;
+        cleanup();
+        process.stdout.write("\n");
+        resolveChoice(choice.value);
+        return;
+      }
+      if (key === "\u001b[D") selected = moveSelection(selected, choices.length, -1);
+      else if (key === "\u001b[C" || key === "\t") {
+        selected = moveSelection(selected, choices.length, 1);
+      } else return;
+      render();
+    };
+    stdin.on("data", onData);
+    render();
+  });
+}
+
 async function askSecret(reader: Reader, prompt: string): Promise<string> {
   if (process.platform !== "win32") {
     Bun.spawnSync(["stty", "-echo"], { stdin: "inherit", stdout: "ignore", stderr: "ignore" });
@@ -113,15 +189,15 @@ async function createLane(
   const identity = await askAgentIdentity(reader, existing, endpoints);
   const id = deriveLaneId(identity, existing.map((lane) => lane.id));
   process.stdout.write(`Local lane ID: ${id}\n`);
-  const runtimeInput = await ask(
+  const runtime = await selectHorizontal<RuntimeKind>(
     reader,
-    "Runtime (claude/codex/antigravity)",
-    "claude",
+    "CLI Runtime",
+    [
+      { value: "claude", label: "Claude" },
+      { value: "codex", label: "Codex" },
+      { value: "antigravity", label: "AntiGravity" },
+    ],
   );
-  const runtime: RuntimeKind =
-    runtimeInput === "codex" || runtimeInput === "antigravity"
-      ? runtimeInput
-      : "claude";
   const workspace = resolve(await ask(reader, "Workspace", process.cwd()));
   const securityInput = await ask(
     reader,

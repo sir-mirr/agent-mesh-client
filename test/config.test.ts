@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ConfigStore, ConfigValidationError } from "../src/config/store";
-import { deriveLaneId } from "../src/tui/app";
+import { deriveLaneId, moveSelection } from "../src/tui/app";
 import type { AgentMeshConfig } from "../src/config/types";
 
 const roots: string[] = [];
@@ -67,5 +67,11 @@ describe("TUI lane identity", () => {
     expect(deriveLaneId("AgentAlpha")).toBe("agent-alpha");
     expect(deriveLaneId("Codex-A")).toBe("codex-a");
     expect(deriveLaneId("Codex-A", ["codex-a"])).toBe("codex-a-2");
+  });
+
+  test("moves horizontal choices with wrap-around", () => {
+    expect(moveSelection(0, 3, 1)).toBe(1);
+    expect(moveSelection(2, 3, 1)).toBe(0);
+    expect(moveSelection(0, 3, -1)).toBe(2);
   });
 });

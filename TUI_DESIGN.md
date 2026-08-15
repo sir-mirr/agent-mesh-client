@@ -176,16 +176,12 @@ Agent Mesh TUI
 ### 8.3. Runtime과 첫 lane 생성
 
 ```text
- Select runtime
+ CLI Runtime: [Claude] [Codex] [AntiGravity]
 
- ● Claude
- ○ Codex
- ○ Antigravity  One-shot JSON transport
-
- [Enter] Continue
+ [←/→ or Tab] Move   [Enter] Select
 ```
 
-Runtime을 선택하면 해당 CLI, 인증과 transport capability를 검사한다.
+선택 항목은 강조 표시한다. 좌우 방향키 또는 Tab으로 이동하고 Enter로 확정한다. Runtime을 선택하면 해당 CLI, 인증과 transport capability를 검사한다.
 
 ```text
  Create first lane
