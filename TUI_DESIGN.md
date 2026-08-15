@@ -190,18 +190,18 @@ Runtime을 선택하면 해당 CLI, 인증과 transport capability를 검사한�
 ```text
  Create first lane
 
- Lane ID       agent-a
- Runtime       Claude
- Workspace     /home/user/work/agent-a
+ Agent Identity
+Runtime       Claude
+Workspace     /home/user/work/agent-a
 
- ✓ Lane ID available
- ✓ Workspace exists
- ✓ Claude authentication detected
+ ✓ Local lane ID generated: agent-a
+✓ Workspace exists
+✓ Claude authentication detected
 
  [Enter] Continue
 ```
 
-Identity 기본값은 lane ID와 같은 문자열로 제안하지만 lane과 identity는 별도 개념이다. Identity는 Hub에서 영구적이고 soft delete 후 재사용되지 않으므로 최종 적용 전 별도로 확인한다. tmux session 이름, UDS와 state 경로는 lane ID로부터 자동 파생한다.
+Agent Identity는 기본값 없이 필수로 입력받는다. Identity는 Hub에서 영구적이고 대소문자를 구분하며 soft delete 후 재사용되지 않으므로 최종 적용 전 별도로 확인한다. 로컬 lane ID는 Identity를 lowercase kebab-case로 정규화해 자동 생성하고, 충돌 시 숫자 suffix를 붙인다. tmux session 이름, UDS와 state 경로는 이 내부 lane ID로부터 자동 파생한다.
 
 Antigravity를 선택하면 one-shot capability, MCP와 인증 상태를 추가로 검사한다.
 

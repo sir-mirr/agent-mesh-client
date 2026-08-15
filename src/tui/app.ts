@@ -6,6 +6,7 @@ import { probeHostDaemon, requestControl } from "../daemon/host-daemon";
 import { probeHub } from "../hub/endpoints";
 import { SecretStore } from "../config/secrets";
 import { installUserService } from "../service/user-service";
+import { IDENTITY_RE } from "@agent-mesh/contracts";
 
 export interface TuiOptions {
   configFile: string;
@@ -51,9 +52,54 @@ function agentType(runtime: RuntimeKind): string {
   return "ai-cli-adapter";
 }
 
-async function createLane(reader: Reader): Promise<LaneConfig> {
+export function deriveLaneId(
+  identity: string,
+  occupied: Iterable<string> = [],
+): string {
+  const base = identity
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const used = new Set(occupied);
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate)) candidate = `${base}-${suffix++}`;
+  return candidate;
+}
+
+async function askAgentIdentity(
+  reader: Reader,
+  existing: readonly LaneConfig[],
+): Promise<string> {
+  while (true) {
+    const identity = await ask(reader, "Agent Identity");
+    if (!identity) {
+      process.stdout.write("Agent Identity is required.\n");
+      continue;
+    }
+    if (!IDENTITY_RE.test(identity)) {
+      process.stdout.write(
+        "Use letters, digits, or hyphens; start with a letter or digit. Identity is case-sensitive.\n",
+      );
+      continue;
+    }
+    if (existing.some((lane) => lane.identity === identity)) {
+      process.stdout.write("That Agent Identity is already assigned to a local lane.\n");
+      continue;
+    }
+    return identity;
+  }
+}
+
+async function createLane(
+  reader: Reader,
+  existing: readonly LaneConfig[] = [],
+): Promise<LaneConfig> {
   heading("Create lane");
-  const id = await ask(reader, "Lane ID", "agent-a");
+  const identity = await askAgentIdentity(reader, existing);
+  const id = deriveLaneId(identity, existing.map((lane) => lane.id));
+  process.stdout.write(`Local lane ID: ${id}\n`);
   const runtimeInput = await ask(
     reader,
     "Runtime (claude/codex/antigravity)",
@@ -64,7 +110,6 @@ async function createLane(reader: Reader): Promise<LaneConfig> {
       ? runtimeInput
       : "claude";
   const workspace = resolve(await ask(reader, "Workspace", process.cwd()));
-  const identity = await ask(reader, "Mesh identity", id);
   const securityInput = await ask(
     reader,
     "Security profile (sandboxed/workspace/unrestricted)",
@@ -116,7 +161,7 @@ async function ensureOnboarding(reader: Reader, options: TuiOptions): Promise<vo
     await reader.question("Press Enter to continue");
   }
   if (config.lanes.length === 0) {
-    config.lanes.push(await createLane(reader));
+    config.lanes.push(await createLane(reader, config.lanes));
     changed = true;
   }
   if (changed) await store.save(config);
@@ -203,7 +248,7 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
     if (action === "a") {
       const store = new ConfigStore(options.configFile);
       const config = await store.load();
-      config.lanes.push(await createLane(reader));
+      config.lanes.push(await createLane(reader, config.lanes));
       await store.save(config);
       await requestControl(options.runtimeDirectory, "config.reload", {});
     } else if (action === "l") {

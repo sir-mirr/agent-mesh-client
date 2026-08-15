@@ -36,7 +36,7 @@ agent-mesh
 agent-mesh
 ```
 
-TUI가 Hub URL, lane ID/identity, runtime, workspace와 보안 profile을 받습니다. 설치 시 등록된 단일 데몬은 설정 변경을 감지하며, Claude lane은 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
+TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 받습니다. 로컬 Lane ID는 Identity에서 자동 생성되며 Hub identity로 사용되지 않습니다. 설치 시 등록된 단일 데몬은 설정 변경을 감지하며, Claude lane은 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
 
 ```sh
 agent-mesh attach <lane-id>

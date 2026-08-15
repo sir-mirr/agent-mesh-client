@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ConfigStore, ConfigValidationError } from "../src/config/store";
+import { deriveLaneId } from "../src/tui/app";
 import type { AgentMeshConfig } from "../src/config/types";
 
 const roots: string[] = [];
@@ -58,5 +59,13 @@ describe("ConfigStore", () => {
     config.lanes[0]!.runtime.security.acknowledged_risk = true;
     config.hub = { base_url: "https://mesh.example", rpc_ws: "http://wrong.example" };
     await expect(store.save(config)).rejects.toBeInstanceOf(ConfigValidationError);
+  });
+});
+
+describe("TUI lane identity", () => {
+  test("derives a private local lane ID from the required Agent Identity", () => {
+    expect(deriveLaneId("AgentAlpha")).toBe("agent-alpha");
+    expect(deriveLaneId("Codex-A")).toBe("codex-a");
+    expect(deriveLaneId("Codex-A", ["codex-a"])).toBe("codex-a-2");
   });
 });
