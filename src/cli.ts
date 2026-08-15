@@ -13,6 +13,7 @@ import {
 } from "./daemon/host-daemon";
 import { runTui } from "./tui/app";
 import { runClaudeChannelMcp } from "./runtime/claude-channel-mcp";
+import { runRuntimeObserver } from "./runtime/observer";
 import { runDiscordDriver } from "./channel-driver/discord";
 import { resolveHubEndpoints } from "./hub/endpoints";
 import { lookupAgentIdentity } from "./hub/provisioning";
@@ -42,6 +43,7 @@ Usage:
   agent-mesh outbox status --lane ID
   agent-mesh outbox replay --lane ID [--event-id ID ...]
   agent-mesh runtime mcp --lane ID
+  agent-mesh runtime observe --lane ID
   agent-mesh attach LANE_ID
   agent-mesh channel add ID --lane ID --provider discord --token-file PATH
   agent-mesh channel list|enable|disable|remove [ID] --lane ID
@@ -311,12 +313,47 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
         }
       }
     }
+    // Antigravity keeps no resident process -- one `agy --print` child per
+    // turn -- so there is no session to join. What an operator attaches to is
+    // the redacted queue view, created on demand like the Codex observer.
+    if (lane?.runtime.kind === "antigravity") {
+      const running = Bun.spawnSync([tmux, "has-session", "-t", session], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if (running.exitCode !== 0) {
+        const created = Bun.spawnSync(
+          [tmux, "new-session", "-d", "-s", session, "-n", "observe",
+            "-c", lane.runtime.workspace,
+            // Compiled, argv[1] is not a script and the binary re-invokes
+            // itself; under `bun run src/cli.ts` it is, and bun needs to be
+            // handed the entry point again.
+            ...(process.argv[1]?.endsWith(".ts")
+              ? [process.execPath, process.argv[1]]
+              : [process.execPath]),
+            "runtime", "observe", "--lane", command,
+            "--runtime-dir", options.runtimeDirectory],
+          { stdout: "pipe", stderr: "pipe" },
+        );
+        if (created.exitCode !== 0) {
+          throw new Error(
+            `Failed to open an Antigravity observer session: ${new TextDecoder().decode(created.stderr).trim()}`,
+          );
+        }
+      }
+    }
     const child = Bun.spawn([tmux, "attach-session", "-t", session], {
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",
     });
     return await child.exited;
+  }
+  if (group === "runtime" && command === "observe") {
+    const laneId = option(options, "--lane");
+    if (!laneId) throw new Error("runtime observe requires --lane");
+    await runRuntimeObserver({ laneId, runtimeDirectory: options.runtimeDirectory });
+    return 0;
   }
   if (group === "runtime" && command === "mcp") {
     const laneId = option(options, "--lane");

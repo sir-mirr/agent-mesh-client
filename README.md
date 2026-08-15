@@ -46,6 +46,29 @@ codex app-server --listen unix://<runtime-dir>/codex-<lane>.sock
 
 app-server의 unix transport는 stdio와 프로토콜이 다릅니다 — `/rpc`의 WebSocket이고 NDJSON이 아닙니다. 직접 붙을 일이 있다면 [`src/runtime/ws-unix-client.ts`](./src/runtime/ws-unix-client.ts)를 보십시오.
 
+### Antigravity 세션 관찰
+
+Antigravity는 turn마다 `agy --print` child를 한 번 실행하고 상주 프로세스를 두지 않습니다. 붙을 CLI가 없으므로 `agent-mesh attach <lane-id>`는 **redacted observer**를 tmux에 띄웁니다.
+
+```
+agent-mesh runtime observe --lane ID     # attach가 내부적으로 쓰는 것과 같은 화면
+```
+
+```
+◆ AGENT MESH · observer · mesh-antigravity
+antigravity runtime · ~/work/ai/mesh-agents/antigravity · 16:51:39
+────────────────────────────────────────────────────────────────────────────
+  TIME      STATE       FROM            IN    OUT   AGE    TURN
+  16:51:14  COMPLETED   mesh-claude       31    46    17s  01a00655-b0c
+  16:26:57  OBSERVED    mesh-codex        36     -  24m42s  01a0063f-761
+```
+
+**본문은 표시하지 않습니다.** `IN`/`OUT`은 프롬프트와 응답의 글자 수입니다. redaction은 렌더러가 아니라 데몬(`runtime.observe`)에서 일어나므로 본문·reasoning·auth code는 애초에 데몬 밖으로 나오지 않습니다 — 화면을 만드는 쪽에 버그가 있어도 샐 것이 없습니다.
+
+`AGE`는 그 turn이 현재 상태에 머문 시간이라, 멈춘 turn이 눈에 띕니다.
+
+인증 중 임시 PTY(`auth` window)는 아직 구현하지 않았습니다.
+
 ## 첫 실행
 
 ```sh

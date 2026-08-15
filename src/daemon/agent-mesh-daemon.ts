@@ -534,6 +534,36 @@ export class AgentMeshDaemon {
             : 50;
         return controller.runtimeInbox.list(limit);
       }
+      case "runtime.observe": {
+        const params = request.params as { lane_id?: unknown; limit?: unknown } | undefined;
+        if (typeof params?.lane_id !== "string") throw new Error("lane_id is required");
+        const controller = this.#controllers.get(params.lane_id);
+        if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
+        const limit =
+          typeof params.limit === "number" && Number.isSafeInteger(params.limit)
+            ? Math.max(1, Math.min(200, params.limit))
+            : 20;
+        // Redacted here rather than in the renderer. An observer is watched by
+        // whoever can see the terminal, and prompt bodies, model output and
+        // auth codes are exactly what must not be on that screen -- so they
+        // never leave the daemon, and a bug in the renderer cannot leak them.
+        return {
+          lane_id: params.lane_id,
+          runtime: controller.config.runtime.kind,
+          workspace: controller.config.runtime.workspace,
+          turns: controller.runtimeInbox.list(limit).map((turn) => ({
+            turn_id: turn.turnId,
+            source_kind: turn.sourceKind,
+            from: typeof turn.correlation.from === "string" ? turn.correlation.from : null,
+            state: turn.state,
+            prompt_chars: turn.content.length,
+            response_chars: turn.response?.length ?? null,
+            error_code: turn.errorCode,
+            created_at: turn.createdAt,
+            updated_at: turn.updatedAt,
+          })),
+        };
+      }
       case "runtime.claim": {
         const params = request.params as { lane_id?: unknown } | undefined;
         if (typeof params?.lane_id !== "string") throw new Error("lane_id is required");

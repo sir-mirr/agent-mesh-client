@@ -412,8 +412,8 @@ optional tmux session: mesh-antigravity-a
 - 평상시 `agy` 상주 window는 없다.
 - 대기 중 runtime 상태는 `Idle`이며 `Stopped`나 장애가 아니다.
 - 턴 처리 중에만 `Running`과 child PID/경과 시간을 상세 화면에 표시한다.
-- `agent-mesh attach <lane>`는 interactive `agy`가 아니라 redacted observer를 연다.
-- auth window는 인증 완료나 timeout 뒤 credential을 출력하지 않고 정리한다.
+- `agent-mesh attach <lane>`는 interactive `agy`가 아니라 redacted observer를 연다. **구현됨** — `runtime.observe` 제어 메서드가 글자 수만 반환하고 `agent-mesh runtime observe --lane ID`가 그것을 렌더한다.
+- auth window는 인증 완료나 timeout 뒤 credential을 출력하지 않고 정리한다. **미구현.**
 - observer는 prompt 본문, response 본문, auth URL/code와 reasoning을 기본 표시하지 않는다.
 
 ## 18. 설정 예시
