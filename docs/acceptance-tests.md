@@ -28,7 +28,7 @@
 | `AT-020` | `UX-001`, `UX-002` | YAML/UDS/port 수동 편집 없이 TUI와 동등 CLI로 첫 lane을 생성·기동한다. |
 | `AT-021` | `DIST-001` | Bun/Node/npm이 없는 지원 OS에서 release binary와 installer로 설치·doctor를 완료한다. |
 | `AT-022` | `SEC-003` | 등록된 Identity takeover를 `IDENTITY_EXISTS`로 거부하고 원 key set이 불변이며, 동일 persisted key를 가진 daemon restart만 재연결한다. |
-| `AT-023` | `UX-003`, `UX-004`, `UX-005` | Agent 0개에서도 빈 Overview와 `+ Add Agent`부터 표시하고, Agent 목록을 직접 탐색하며, Esc/빈 Backspace로 복귀하고, Channel이 없을 때 적용 불가능한 action을 표시하지 않는다. |
+| `AT-023` | `UX-003`, `UX-004`, `UX-005` | Agent 0개에서도 빈 Overview와 `+ Add Agent`부터 표시하고, Agent 목록을 직접 탐색하며, Esc로 복귀하고, Channel이 없을 때 적용 불가능한 action을 표시하지 않는다. |
 | `AT-024` | `OPS-004` | 축소된 launchd/systemd 환경에서도 명시적 service PATH로 tmux와 선택 Runtime CLI를 발견한다. |
 
 ## 실행된 검증

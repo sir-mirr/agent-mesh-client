@@ -109,7 +109,7 @@ Agent Mesh TUI
 - Main: 목록, 상세, wizard 또는 로그
 - Footer: 현재 동작 키
 - Overlay: 확인, secret 입력, 오류 상세, 도움말
-- Esc 또는 빈 입력 상태의 Backspace는 이전 화면으로 이동한다. 대상이 없는 action은 disabled로 남기지 않고 숨긴다.
+- Esc는 이전 화면으로 이동한다. Backspace는 문자 삭제 전용이다 — 빈 입력에서 뒤로 가게 하면 오타를 지우던 손이 화면을 닫는다. 대상이 없는 action은 disabled로 남기지 않고 숨긴다.
 
 ## 7. 상태 표현
 

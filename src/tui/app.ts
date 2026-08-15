@@ -106,8 +106,9 @@ async function question(
     _input: string | undefined,
     key: { name?: string },
   ) => {
-    const currentLine = (reader as Reader & { line?: string }).line ?? "";
-    if (key.name === "escape" || (key.name === "backspace" && currentLine.length === 0)) {
+    // Escape only. Backspace used to go back on an empty line, which put the
+    // exit one keystroke past deleting the last character someone typed.
+    if (key.name === "escape") {
       controller.abort();
     }
   };
@@ -204,7 +205,7 @@ async function selectGrid<T extends string>(
       _input: string | undefined,
       key: { name?: string; ctrl?: boolean },
     ) => {
-      if (key.name === "escape" || key.name === "backspace") {
+      if (key.name === "escape") {
         cleanup();
         process.stdout.write("\n");
         reject(new BackNavigation());
@@ -284,7 +285,7 @@ async function selectHorizontal<T extends string>(
       _input: string | undefined,
       key: { name?: string; ctrl?: boolean },
     ) => {
-      if (key.name === "escape" || key.name === "backspace") {
+      if (key.name === "escape") {
         cleanup();
         process.stdout.write("\n");
         reject(new BackNavigation());
@@ -391,7 +392,7 @@ async function createLane(
   existing: readonly LaneConfig[] = [],
 ): Promise<LaneConfig> {
   heading("Add agent");
-  process.stdout.write(`${paint(DIM, "Esc / empty Backspace  Back")}\n\n`);
+  process.stdout.write(`${paint(DIM, "Esc  Back")}\n\n`);
   const identity = await askAgentIdentity(reader, existing, endpoints);
   const id = deriveLaneId(identity, existing.map((lane) => lane.id));
   const runtime = await selectHorizontal<RuntimeKind>(
@@ -643,7 +644,7 @@ function renderDashboard(
   }
   writePanel(`Agents · ${lanes.length}`, agentLines);
   process.stdout.write(
-    `\n${paint(DIM, "↑ ↓  Select    Enter  Open    Esc / Backspace  Back    Ctrl+C  Exit")}\n`,
+    `\n${paint(DIM, "↑ ↓  Select    Enter  Open    Esc  Back    Ctrl+C  Exit")}\n`,
   );
 }
 
@@ -717,7 +718,7 @@ function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
   }
   writePanel("Manage agent", actionLines);
   process.stdout.write(
-    `\n${paint(DIM, "↑ ↓ ← →  Navigate    Enter  Select    Esc / Backspace  Back")}\n`,
+    `\n${paint(DIM, "↑ ↓ ← →  Navigate    Enter  Select    Esc  Back")}\n`,
   );
 }
 
@@ -905,7 +906,7 @@ async function channelsScreen(
         `  ${channel.id.padEnd(24)} ${channel.provider.padEnd(12)} ${channel.enabled ? "enabled" : "disabled"}\n`,
       );
     }
-    process.stdout.write(`\n${paint(DIM, "Esc / Backspace  Back")}\n\n`);
+    process.stdout.write(`\n${paint(DIM, "Esc  Back")}\n\n`);
     const actionChoices: HorizontalChoice<ChannelAction>[] = [
       { value: "add", label: "Add Discord" },
       ...(lane.channels.some((channel) => !channel.enabled)
