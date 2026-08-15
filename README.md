@@ -27,8 +27,31 @@ agent-mesh
 | Runtime | 필요한 외부 도구 | 연결 방식 |
 |---|---|---|
 | Claude | `claude`, `tmux` | stdio MCP development channel + tmux |
-| Codex | `codex` | 공식 `codex app-server --listen stdio://` |
+| Codex | `codex` (공식 installer) | 공식 `codex app-server --listen stdio://` |
 | Antigravity | `agy` | turn마다 `agy --print --output-format json` |
+
+### Codex는 Homebrew cask로 설치하면 tmux 관찰이 불가능합니다
+
+Codex 세션을 tmux에서 들여다보려면 `codex app-server daemon`이 필요하고, 그 daemon은 **공식 installer가 관리하는 standalone 경로에서만** 기동합니다.
+
+```
+$ codex app-server daemon start
+Error: managed standalone Codex install not found at
+  /Users/<you>/.codex/packages/standalone/current/codex
+
+This command requires the standalone install managed by the Codex installer,
+because the daemon starts and updates app-server from that fixed path.
+```
+
+Homebrew cask(`brew install --cask codex`)는 `/opt/homebrew/bin/codex`에 바이너리만 놓고 그 standalone 경로를 만들지 않습니다. cask만 설치된 호스트에서 Codex lane은 정상 동작하지만 — 데몬이 자체 `app-server --listen stdio://` child를 띄웁니다 — 그 child는 tmux window가 아니라 pipe로만 붙는 숨은 프로세스라 `agent-mesh attach`로 볼 수 없습니다.
+
+공식 installer로 전환하려면:
+
+```sh
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+
+`~/.local/bin/codex`와 `~/.codex/packages/standalone/current/`가 생깁니다. 두 설치가 공존하면 **PATH 순서가 어느 쪽이 실행될지를 결정합니다** — 데몬은 서비스 등록 시 기록된 PATH로 `codex`를 찾으므로, cask를 남겨둘 경우 어느 바이너리가 잡히는지 `agent-mesh doctor`로 확인하십시오.
 
 ## 첫 실행
 
