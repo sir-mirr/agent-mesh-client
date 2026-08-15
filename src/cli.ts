@@ -40,6 +40,7 @@ Usage:
   agent-mesh mesh agents --lane ID
   agent-mesh mesh inbox --lane ID
   agent-mesh outbox status --lane ID
+  agent-mesh outbox replay --lane ID [--event-id ID ...]
   agent-mesh runtime mcp --lane ID
   agent-mesh attach LANE_ID
   agent-mesh channel add ID --lane ID --provider discord --token-file PATH
@@ -82,6 +83,7 @@ const VALUE_OPTIONS = new Set([
   "--provider",
   "--token-file",
   "--account-ref",
+  "--event-id",
 ]);
 const BOOLEAN_OPTIONS = new Set(["--json", "--yes", "--acknowledge-risk"]);
 
@@ -515,6 +517,21 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     print(
       await requestControl(options.runtimeDirectory, "outbox.summary", {
         lane_id: laneId,
+      }),
+    );
+    return 0;
+  }
+  if (group === "outbox" && command === "replay") {
+    const laneId = option(options, "--lane");
+    if (!laneId) throw new Error("outbox replay requires --lane");
+    // No --event-id means every dead letter in the lane. That is the version
+    // skew case: one wrong classification stops a run of events, and naming
+    // them individually is the wrong shape of work for it.
+    const eventIds = options.values.get("--event-id");
+    print(
+      await requestControl(options.runtimeDirectory, "outbox.replay", {
+        lane_id: laneId,
+        ...(eventIds ? { event_ids: eventIds } : {}),
       }),
     );
     return 0;

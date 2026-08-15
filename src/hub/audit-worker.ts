@@ -145,11 +145,13 @@ export class AuditWorker {
     } catch (error) {
       const rpcError = error instanceof HubRpcError ? error : null;
       const httpError = error instanceof AuditHttpError ? error : null;
-      // `errorClass`, not a local lookup with a fallback: SPEC § 8.9.3 makes an
-      // unclassified code permanent, and a `?? "transient"` of our own would
-      // turn a code from a newer Hub into an unbounded retry.
+      // `"transient"` for an unrecognised code, stated here rather than left to
+      // the table: this path has an outbox behind it. A wrong retry is capped
+      // by the backoff ceiling and visible as a rising attempt count, while a
+      // wrong dead-letter needs an operator to undo. Paths with nothing to
+      // drain later — connect, send — must pass `"permanent"` instead.
       const classification = rpcError
-        ? errorClass(rpcError.code)
+        ? errorClass(rpcError.code, "transient")
         : httpError?.permanent
           ? "permanent"
           : "transient";

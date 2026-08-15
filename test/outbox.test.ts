@@ -136,4 +136,63 @@ describe("LaneOutbox", () => {
     });
     outbox.close();
   });
+
+  // Dead-lettering quarantines rather than deletes, but until this existed
+  // nothing could let an event back out — so a classification the client got
+  // wrong (a code from a newer Hub, defaulted by its call site) stopped events
+  // that were correct, and only a hand-written UPDATE could undo it.
+  test("returns dead letters to the queue without erasing why they stopped", async () => {
+    const { staging, state, attachment } = await fixture();
+    const outbox = new LaneOutbox("lane-a", state);
+    await outbox.initialize();
+    const event = await outbox.record(input(staging, attachment));
+    outbox.markDeadLetter(event.eventId, "AUDIT_APPEND_FAILED");
+    expect(outbox.listDue()).toHaveLength(0);
+    expect((await outbox.summary()).deadLetter).toBe(1);
+
+    expect(outbox.replayDeadLetters()).toEqual({
+      replayed: [event.eventId],
+      skipped: [],
+    });
+
+    const due = outbox.listDue();
+    expect(due).toHaveLength(1);
+    // The blob was never confirmed, so the replay has to re-enter the upload
+    // phase; appending first would fail with AUDIT_MISSING_BLOBS.
+    expect(due[0]).toMatchObject({
+      state: "PENDING_BLOBS",
+      resumeState: "PENDING_BLOBS",
+      attemptCount: 1,
+      lastErrorCode: "AUDIT_APPEND_FAILED",
+    });
+    outbox.close();
+  });
+
+  test("skips the blob phase for a replay whose attachments are confirmed", async () => {
+    const { staging, state, attachment } = await fixture();
+    const outbox = new LaneOutbox("lane-a", state);
+    await outbox.initialize();
+    const event = await outbox.record(input(staging, attachment));
+    outbox.markBlobConfirmed(event.attachmentBlobKeys[0]!, "hub-blob-1");
+    outbox.markDeadLetter(event.eventId, "-32000");
+
+    outbox.replayDeadLetters([event.eventId]);
+    expect(outbox.listDue()[0]).toMatchObject({ state: "PENDING_APPEND" });
+    outbox.close();
+  });
+
+  test("refuses to drag an acked event back out of the Hub's hands", async () => {
+    const { staging, state, attachment } = await fixture();
+    const outbox = new LaneOutbox("lane-a", state);
+    await outbox.initialize();
+    const event = await outbox.record(input(staging, attachment));
+    outbox.markAcked(event.eventId);
+
+    expect(outbox.replayDeadLetters([event.eventId, "aud_missing"])).toEqual({
+      replayed: [],
+      skipped: [event.eventId, "aud_missing"],
+    });
+    expect(outbox.listDue()).toHaveLength(0);
+    outbox.close();
+  });
 });

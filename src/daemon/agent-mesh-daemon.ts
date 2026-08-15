@@ -444,6 +444,33 @@ export class AgentMeshDaemon {
         if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
         return await controller.outbox.summary();
       }
+      case "outbox.replay": {
+        const params = request.params as
+          | { lane_id?: unknown; event_ids?: unknown }
+          | undefined;
+        if (typeof params?.lane_id !== "string") throw new Error("lane_id is required");
+        const controller = this.#controllers.get(params.lane_id);
+        if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
+        const eventIds = params.event_ids;
+        if (
+          eventIds !== undefined &&
+          (!Array.isArray(eventIds) || eventIds.some((id) => typeof id !== "string"))
+        ) {
+          throw new Error("event_ids must be an array of strings");
+        }
+        const result = controller.outbox.replayDeadLetters(eventIds as string[] | undefined);
+        // The worker sleeps a second between empty passes; without this the
+        // replayed events sit until that timer expires even though the queue
+        // already has them.
+        this.#hubConnections.get(params.lane_id)?.auditWorker.poke();
+        return {
+          lane_id: params.lane_id,
+          replayed: result.replayed.length,
+          skipped: result.skipped.length,
+          event_ids: result.replayed,
+          outbox: await controller.outbox.summary(),
+        };
+      }
       case "hub.status":
         return [...this.#hubConnections.entries()].map(([laneId, connection]) => ({
           lane_id: laneId,

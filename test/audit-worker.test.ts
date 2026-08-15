@@ -5,19 +5,26 @@ import { HubRpcError } from "../src/hub/mesh-client";
 
 describe("audit retry classification", () => {
   test("dead-letters the Hub catch-all append failure", () => {
-    expect(errorClass(MESH_ERROR.SERVER_ERROR)).toBe("permanent");
+    expect(errorClass(MESH_ERROR.SERVER_ERROR, "transient")).toBe("permanent");
   });
 
   test("keeps explicit Hub load shedding retryable", () => {
-    expect(errorClass(MESH_ERROR.AUDIT_BUSY)).toBe("transient");
+    expect(errorClass(MESH_ERROR.AUDIT_BUSY, "transient")).toBe("transient");
   });
 
-  // Reversed at contracts v0.7.3, and the reversal is the point: an unlisted
-  // code comes from a Hub newer than this pin, and retrying it forever is the
-  // failure -32000 already caused once. Permanent means quarantine and alert,
-  // so an unknown condition reaches a person instead of a retry loop.
-  test("fails codes this pin has never heard of toward quarantine", () => {
-    expect(errorClass(-32999)).toBe("permanent");
+  // v0.7.4 made the answer for an unlisted code an argument, because no single
+  // answer is right on every path. The audit worker passes "transient" and
+  // this asserts the choice, not the contract's opinion: a wrong retry here is
+  // capped by the backoff ceiling and drains later, while a wrong dead-letter
+  // waits for `outbox replay` and someone to run it.
+  test("retries codes this pin has never heard of, because a queue holds them", () => {
+    expect(errorClass(-32999, "transient")).toBe("transient");
+  });
+
+  // The same call on a path with no outbox behind it. Kept next to the case
+  // above so the pair reads as a decision rather than an accident.
+  test("quarantines an unknown code where nothing would drain it later", () => {
+    expect(errorClass(-32999, "permanent")).toBe("permanent");
   });
 
   // Under the v0.7.0 pin, -32000 was classified only because this repository
@@ -36,7 +43,7 @@ describe("audit retry classification", () => {
     const classified = auditCodes.map((code) => ({
       code,
       inTable: Object.hasOwn(ERROR_CLASS, code),
-      class: errorClass(code),
+      class: errorClass(code, "transient"),
     }));
     expect(classified).toEqual([
       { code: MESH_ERROR.AUDIT_MISSING_BLOBS, inTable: true, class: "transient" },
