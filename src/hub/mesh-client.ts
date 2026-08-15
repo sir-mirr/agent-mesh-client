@@ -1,5 +1,6 @@
-import type {
-  AuditCapabilities,
+import {
+  MESH_ERROR,
+  type AuditCapabilities,
 } from "@agent-mesh/contracts";
 import type { MeshMessageParams } from "@agent-mesh/contracts/schema";
 import type { IdentityKeyManager } from "../identity/key-manager";
@@ -100,7 +101,7 @@ export class MeshClient {
         audit: result.capabilities?.audit ?? null,
       };
     } catch (error) {
-      if (error instanceof HubRpcError && error.code === -32014) {
+      if (error instanceof HubRpcError && error.code === MESH_ERROR.KEY_NOT_APPROVED) {
         this.#status = {
           ...this.#status,
           state: "approval",
