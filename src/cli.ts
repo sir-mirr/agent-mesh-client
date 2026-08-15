@@ -536,14 +536,24 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     (command === "enable" || command === "disable" || command === "remove") &&
     value
   ) {
-    print(
-      await mutateConfig(options, (config) => {
-        const index = config.lanes.findIndex((lane) => lane.id === value);
-        if (index === -1) throw new Error(`Unknown lane: ${value}`);
-        if (command === "remove") config.lanes.splice(index, 1);
-        else config.lanes[index]!.enabled = command === "enable";
-      }),
-    );
+    let removedIdentity: string | null = null;
+    const saved = await mutateConfig(options, (config) => {
+      const index = config.lanes.findIndex((lane) => lane.id === value);
+      if (index === -1) throw new Error(`Unknown lane: ${value}`);
+      if (command === "remove") {
+        removedIdentity = config.lanes[index]!.identity;
+        config.lanes.splice(index, 1);
+      } else config.lanes[index]!.enabled = command === "enable";
+    });
+    print(saved);
+    // Local removal only. Releasing the Mesh identity is a Hub admin action,
+    // and § 9.3 retires a torn-down name rather than freeing it -- so this is
+    // the last point at which saying so costs nothing.
+    if (removedIdentity) {
+      process.stderr.write(
+        `Mesh identity ${removedIdentity} remains registered with the Hub and cannot be added again.\n`,
+      );
+    }
     return 0;
   }
   if (group === "mesh" && command === "send") {
