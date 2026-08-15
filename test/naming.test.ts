@@ -42,7 +42,7 @@ const MUTATING = [
   // Added only after checking each one is a mutating verb in its own right,
   // not to quiet the list: a transition is applied, a conversation is reset,
   // a blob is ingested.
-  "transition", "reset", "ingest",
+  "transition", "reset", "ingest", "install",
 ];
 
 /** Lines that put a row or a file somewhere it outlives this process. */
@@ -54,6 +54,11 @@ const WRITE_PATTERNS = [
   /\bmkdir\(/,
   /\bexec\(/,
 ];
+
+const KEYWORDS = new Set([
+  "if", "for", "while", "switch", "catch", "return", "do", "else", "try",
+  "await", "yield", "typeof", "new", "throw", "case", "with",
+]);
 
 interface Method {
   file: string;
@@ -81,18 +86,28 @@ async function sourceFiles(root: string): Promise<string[]> {
  */
 function methodsIn(file: string, source: string): Method[] {
   const lines = source.split("\n");
-  const header = /^ {2}(?:(?:async|readonly|static|get|set) )*(#?[A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\(/;
+  const member = /^ {2}(?:(?:async|readonly|static|get|set) )*(#?[A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\(/;
+  const free = /^(?:export )?(?:async )?function (\*?)([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\(/;
   const methods: Method[] = [];
   let current: Method | null = null;
   for (const [index, line] of lines.entries()) {
-    const match = header.exec(line);
-    if (match) {
+    const declared = free.exec(line);
+    if (declared) {
+      current = { file, name: declared[2]!, line: index + 1, body: [] };
+      methods.push(current);
+      continue;
+    }
+    const match = member.exec(line);
+    // A statement inside a top-level function sits at the same indentation as
+    // a class member, so `if (...)` and `for (...)` parse as members named
+    // `if` and `for`. Left in, they take the writes of the function they are
+    // in and answer for them under a name nobody chose.
+    if (match && !KEYWORDS.has(match[1]!)) {
       current = { file, name: match[1]!, line: index + 1, body: [] };
       methods.push(current);
       continue;
     }
-    // A closing brace at member indentation ends the member.
-    if (/^ {2}\}/.test(line)) current = null;
+    if (/^ {2}\}/.test(line) || /^\}/.test(line)) current = null;
     else current?.body.push(line);
   }
   return methods;
@@ -105,9 +120,18 @@ function writes(method: Method): boolean {
   });
 }
 
+/**
+ * A mutating verb anywhere in the name, not only at the front. `atomicWrite`
+ * says what it does as plainly as `writeAtomic`; requiring the verb first
+ * would have renamed a clear name to satisfy the checker, which is the rule
+ * bending the code rather than the other way round.
+ */
 function namedForWriting(name: string): boolean {
-  const bare = name.replace(/^#/, "").toLowerCase();
-  return MUTATING.some((verb) => bare.startsWith(verb));
+  const segments = name
+    .replace(/^#/, "")
+    .split(/(?=[A-Z])/)
+    .map((segment) => segment.toLowerCase());
+  return segments.some((segment) => MUTATING.includes(segment));
 }
 
 const methods = (
@@ -117,13 +141,24 @@ const methods = (
 ).flat();
 
 describe("methods that write are named for it", () => {
-  test("the scan actually found the class members", () => {
-    // A regex that stopped matching would make every assertion below vacuous.
+  // A scanner can break while every assertion below still passes -- it did:
+  // the first version read `if (...)` inside a top-level function as a member
+  // named `if`, and half of what it found was control flow. Nothing failed,
+  // because a rule that examines the wrong list examines it consistently.
+  test("the scan finds real declarations and nothing else", () => {
     const names = new Set(methods.map((method) => method.name));
     expect(names.has("markAcked")).toBe(true);
     expect(names.has("claimNext")).toBe(true);
     expect(names.has("peek")).toBe(true);
-    expect(methods.length).toBeGreaterThan(100);
+    // Top-level functions, which the first scanner never looked at.
+    expect(names.has("writeAtomicJson")).toBe(true);
+    expect(names.has("laneSocketPath")).toBe(true);
+
+    const keywords = methods
+      .filter((method) => KEYWORDS.has(method.name))
+      .map((method) => `${method.file}:${method.line} ${method.name}`);
+    expect(keywords).toEqual([]);
+    expect(methods.length).toBeGreaterThan(200);
   });
 
   test("no method writes under a name that does not say so", () => {

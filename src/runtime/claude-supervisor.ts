@@ -29,7 +29,7 @@ export interface ClaudeSupervisorStatus {
   prompt: string | null;
 }
 
-async function atomicJson(path: string, value: unknown): Promise<void> {
+async function writeAtomicJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.tmp-${process.pid}-${Date.now()}`;
   const handle = await open(temp, "wx", 0o600);
@@ -118,7 +118,7 @@ export class ClaudeSupervisor {
       return;
     }
     const mcp = mcpCommand(this.options);
-    await atomicJson(this.mcpConfigPath, {
+    await writeAtomicJson(this.mcpConfigPath, {
       mcpServers: {
         "agent-mesh": { type: "stdio", command: mcp.command, args: mcp.args },
       },
