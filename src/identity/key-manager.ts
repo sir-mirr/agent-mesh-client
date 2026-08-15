@@ -41,6 +41,29 @@ export class IdentityKeyManager {
     this.#secretName = `${laneStorageName(identity)}.ed25519.json`;
   }
 
+  /**
+   * The stored key, or null when this identity has none here.
+   *
+   * Separate from `ensure` because a caller asking "do we already hold this
+   * identity's key?" must not create one by asking. `lane add` uses it to tell
+   * an identity it can reclaim from one that belongs to somebody else, and
+   * generating a key there would make every answer "not ours".
+   */
+  async peek(): Promise<IdentityKeyInfo | null> {
+    try {
+      const record = JSON.parse(await this.secrets.get(this.#secretName)) as PersistedIdentityKey;
+      this.#validateRecord(record);
+      return {
+        publicKey: record.public_key,
+        fingerprint: keyFingerprint(record.public_key),
+        createdAt: record.created_at,
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
   async ensure(): Promise<IdentityKeyInfo> {
     if (!this.#record) {
       try {

@@ -11,6 +11,7 @@ import { probeHostDaemon, requestControl } from "../daemon/host-daemon";
 import { probeHub, resolveHubEndpoints, type HubEndpoints } from "../hub/endpoints";
 import { lookupAgentIdentity } from "../hub/provisioning";
 import { SecretStore } from "../config/secrets";
+import { IdentityKeyManager } from "../identity/key-manager";
 import { installUserService } from "../service/user-service";
 import { IDENTITY_RE } from "@agent-mesh/contracts";
 
@@ -361,6 +362,7 @@ async function askAgentIdentity(
   reader: Reader,
   existing: readonly LaneConfig[],
   endpoints: HubEndpoints,
+  secretDirectory: string,
 ): Promise<string> {
   while (true) {
     const identity = await ask(reader, "Agent Identity", undefined, true);
@@ -380,10 +382,27 @@ async function askAgentIdentity(
     }
     process.stdout.write("Checking Agent Identity in Mesh…\n");
     const registered = await lookupAgentIdentity(endpoints, identity);
+    if (registered && !registered.deleted) {
+      // Registered is not the same as taken. Removing an agent leaves the Hub
+      // row alive and its key on this host, so re-adding your own agent has to
+      // be told apart from colliding with somebody else's -- by fingerprint,
+      // since that is the only part only the holder can match.
+      const held = await new IdentityKeyManager(
+        identity,
+        new SecretStore(secretDirectory),
+      ).peek();
+      if (held && registered.keys.some((key) => key.fingerprint === held.fingerprint)) {
+        process.stdout.write(
+          `That Agent Identity is registered to this host's key (${held.fingerprint}).\n` +
+            `Reclaiming it; key is currently ${registered.keyStatus ?? "registered"}.\n`,
+        );
+        return identity;
+      }
+    }
     if (registered) {
       const state = registered.deleted
         ? "soft-deleted and permanently reserved"
-        : `already registered${registered.keyStatus ? `; key ${registered.keyStatus}` : ""}`;
+        : `registered to a different key${registered.keyStatus ? `; key ${registered.keyStatus}` : ""}`;
       process.stdout.write(`That Agent Identity is ${state}. Choose another identity.\n`);
       continue;
     }
@@ -395,11 +414,12 @@ async function askAgentIdentity(
 async function createLane(
   reader: Reader,
   endpoints: HubEndpoints,
+  secretDirectory: string,
   existing: readonly LaneConfig[] = [],
 ): Promise<LaneConfig> {
   heading("Add agent");
   process.stdout.write(`${paint(DIM, "Esc  Back")}\n\n`);
-  const identity = await askAgentIdentity(reader, existing, endpoints);
+  const identity = await askAgentIdentity(reader, existing, endpoints, secretDirectory);
   const id = deriveLaneId(identity, existing.map((lane) => lane.id));
   const runtime = await selectHorizontal<RuntimeKind>(
     reader,
@@ -846,11 +866,10 @@ async function agentDetail(
         writePanel("Before removing", [
           `This removes the lane from this host only.`,
           `Mesh identity ${agent.identity} stays registered and live with the Hub.`,
-          paint(YELLOW, "Adding it again here will be refused while it is registered."),
-          paint(DIM, "It is recoverable: an operator can re-register the identity, and"),
-          paint(DIM, "its key returns to pending for approval. Permanent loss needs a"),
-          paint(DIM, "Hub admin teardown, which this tool never performs."),
-          paint(DIM, "Durable state, outbox and Blob spool are kept on disk."),
+          `This host keeps its key, so the same agent can be added here again.`,
+          paint(YELLOW, "Delete that key and the identity becomes unreclaimable here."),
+          paint(DIM, "Permanent loss needs a Hub admin teardown, which this tool"),
+          paint(DIM, "never performs. Durable state, outbox and Blob spool are kept."),
         ]);
         let confirm: string;
         try {
@@ -908,7 +927,7 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
       if (!config.hub) throw new Error("Hub must be configured before adding an agent");
       const endpoints = resolveHubEndpoints(config.hub.base_url, config.hub);
       try {
-        config.lanes.push(await createLane(reader, endpoints, config.lanes));
+        config.lanes.push(await createLane(reader, endpoints, options.secretDirectory, config.lanes));
       } catch (error) {
         if (error instanceof BackNavigation) continue;
         throw error;

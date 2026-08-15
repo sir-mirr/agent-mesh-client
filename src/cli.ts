@@ -18,6 +18,7 @@ import { runDiscordDriver } from "./channel-driver/discord";
 import { resolveHubEndpoints } from "./hub/endpoints";
 import { lookupAgentIdentity } from "./hub/provisioning";
 import { SecretStore } from "./config/secrets";
+import { IdentityKeyManager } from "./identity/key-manager";
 import {
   installUserService,
   restartUserService,
@@ -424,8 +425,31 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       identity,
     );
     if (registered) {
-      throw new Error(
-        `Agent Identity already exists in Mesh: ${identity} (${registered.deleted ? "soft-deleted" : registered.keyStatus ?? "registered"})`,
+      if (registered.deleted) {
+        throw new Error(
+          `Agent Identity is permanently reserved after teardown: ${identity}`,
+        );
+      }
+      // A registered identity is not automatically somebody else's. Removing a
+      // lane leaves the Hub row alive and keeps the key on this host, so the
+      // common case of re-adding one's own agent looks identical to a name
+      // collision unless the fingerprints are compared. `peek` never creates a
+      // key -- generating one here would make every answer "not ours".
+      const held = await new IdentityKeyManager(
+        identity,
+        new SecretStore(options.secretDirectory),
+      ).peek();
+      const mine =
+        held !== null &&
+        registered.keys.some((candidate) => candidate.fingerprint === held.fingerprint);
+      if (!mine) {
+        throw new Error(
+          `Agent Identity belongs to a different key: ${identity} (${registered.keyStatus ?? "registered"})`,
+        );
+      }
+      process.stderr.write(
+        `Reclaiming ${identity}: this host holds its key (${held.fingerprint}), ` +
+          `currently ${registered.keyStatus ?? "registered"}.\n`,
       );
     }
     const lane: LaneConfig = {
@@ -552,8 +576,8 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     if (removedIdentity) {
       process.stderr.write(
         `Mesh identity ${removedIdentity} remains registered with the Hub. ` +
-          `Adding it again here will be refused while it is registered; recovering it ` +
-          `means re-registering the identity and having its key approved again.\n`,
+          `This host keeps its key, so the same agent can be added here again. ` +
+          `Delete the key and it becomes another host's to claim.\n`,
       );
     }
     return 0;
