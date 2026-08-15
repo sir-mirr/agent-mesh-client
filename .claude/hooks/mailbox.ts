@@ -45,7 +45,11 @@ import { dirname, join } from "node:path";
 
 const MAILBOX = process.env.AGENT_MESH_MAILBOX_URL ?? "http://localhost:3300/api/mail";
 // Defaults to this repository's identity. Upstream defaults to
-// `platform-claude`, and inheriting that would read the other agent's inbox.
+// `platform-claude`, and inheriting that reads the other agent's inbox. It can
+// no longer clear it — a recipient-scoped DELETE is 403 — but it consumes the
+// read flags that side's first run depends on, and MARK_PATH below is keyed by
+// this value, so it would advance *their* mark file past mail they never saw.
+// Both agents share this home directory, so that file is right next to ours.
 const AGENT_ID = process.env.AGENT_MESH_AGENT_ID ?? "client-claude";
 const MARK_PATH = join(homedir(), ".claude", "agent-mesh", `${AGENT_ID}.mailbox-mark`);
 const TIMEOUT_MS = 2000;

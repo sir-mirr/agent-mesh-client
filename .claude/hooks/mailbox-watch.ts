@@ -15,16 +15,21 @@
  * notification is not the place for one, so this sends ids and previews, the
  * model wakes, and the hook hands over the full text at the end of that turn.
  *
- * Nothing here writes the hook's mark file. A GET does mark messages read in
- * the mailer, which is why the hook keys off its own mark rather than `isRead`
- * — this watcher would otherwise consume every message before the hook saw it.
+ * **It cannot replace the hook.** Its high-water mark lives in memory and is
+ * re-seeded from whatever is in the inbox on start, so a restart silently
+ * stops it announcing anything that arrived before it — while the hook's mark
+ * is a file and survives. Read this watcher as a wake-up, never as delivery.
  *
- * Ids come from a single counter in the mailer and only increase, so a
- * high-water mark stays correct across restarts of either side.
+ * Nothing here writes that file. This poll's own GET marks messages read in
+ * the mailer, which is exactly why the hook keys off its mark rather than
+ * `isRead`: otherwise this watcher would consume every message first.
+ *
+ * Ids come from a single counter in the mailer and only increase, so comparing
+ * against a high-water mark stays correct however either side restarts.
  *
  * AGENT_ID defaults to this repository's identity for the same reason it does
  * in `mailbox.ts`: inheriting the upstream default would watch the other side's
- * inbox.
+ * inbox and consume the read flags its owner depends on.
  */
 
 const MAILBOX = process.env.AGENT_MESH_MAILBOX_URL ?? "http://localhost:3300/api/mail";
