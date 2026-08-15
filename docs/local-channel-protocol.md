@@ -206,15 +206,17 @@ JSON-RPC 표준 오류와 다음 local data를 사용한다.
 
 | code | `data.code` | 의미 |
 |---:|---|---|
-| `-32040` | `CHANNEL_NOT_REGISTERED` | 첫 handshake 누락 |
-| `-32041` | `CHANNEL_PROTOCOL_UNSUPPORTED` | version 협상 실패 |
-| `-32042` | `CHANNEL_CAPABILITY_UNSUPPORTED` | method/capability 미지원 |
-| `-32043` | `CHANNEL_ATTACHMENT_INVALID` | path, size, hash 또는 정책 오류 |
-| `-32044` | `CHANNEL_DURABILITY_FAILED` | outbox/Blob durable write 실패 |
-| `-32045` | `CHANNEL_BACKPRESSURE` | local storage 또는 queue 수락 불가 |
-| `-32046` | `CHANNEL_PROVIDER_FAILED` | provider action 실패 |
+| `-32050` | `CHANNEL_NOT_REGISTERED` | 첫 handshake 누락 |
+| `-32051` | `CHANNEL_PROTOCOL_UNSUPPORTED` | version 협상 실패 |
+| `-32052` | `CHANNEL_CAPABILITY_UNSUPPORTED` | method/capability 미지원 |
+| `-32053` | `CHANNEL_ATTACHMENT_INVALID` | path, size, hash 또는 정책 오류 |
+| `-32054` | `CHANNEL_DURABILITY_FAILED` | outbox/Blob durable write 실패 |
+| `-32055` | `CHANNEL_BACKPRESSURE` | local storage 또는 queue 수락 불가 |
+| `-32056` | `CHANNEL_PROVIDER_FAILED` | provider action 실패 |
 
 오류 `data`에는 `code`, `retryable`, 선택 `retry_after_ms`와 redacted detail만 넣는다. token, Authorization header, 원본 secret path는 넣지 않는다.
+
+이 코드들은 `-32040`부터 시작했고 mesh의 audit 코드 5개와 숫자가 겹쳤다. 두 어휘 모두 JSON-RPC이고 한 프로세스 안에서 만나므로 겹친 번호는 오류가 아니라 **재분류**를 일으킨다 — `-32043`은 여기선 "영구히 잘못된 첨부"였고 mesh에선 "Hub busy, 재시도"였다. `@agent-mesh/contracts` v0.7.5가 구간을 나눠 mesh는 `-32049 … -32000`만 할당하고 그 위는 비워 두기로 했으므로, 이 프로토콜은 `-32099 … -32050`을 쓴다. 공개 release 이전의 변경이라 protocol_version은 `0.1` 그대로 두었다.
 
 ## 8. 연결과 drain
 
