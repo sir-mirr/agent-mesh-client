@@ -836,17 +836,21 @@ async function agentDetail(
       if (selection.value === "toggle") {
         config.lanes[index]!.enabled = !config.lanes[index]!.enabled;
       } else if (selection.value === "remove") {
-        // Removing a lane is local only. The Mesh identity stays registered,
-        // and it cannot be registered again -- teardown needs a Hub admin, and
-        // a torn-down name is burned rather than freed. Someone who expects
-        // this to be undoable finds out when re-adding fails.
+        // Local only: the Mesh identity stays registered and live. `lane add`
+        // refuses it afterwards because this tool sends create_only, not
+        // because the Hub forbids it -- re-registering without create_only
+        // returns the identity with its key back to pending. Saying "cannot be
+        // added again" would be the stronger claim and the wrong one, and it
+        // would flatten the difference from an admin teardown, which really is
+        // permanent (§ 9.3 retires that name rather than freeing it).
         writePanel("Before removing", [
           `This removes the lane from this host only.`,
-          `Mesh identity ${agent.identity} stays registered with the Hub.`,
-          paint(YELLOW, "The same identity cannot be added again on any host."),
+          `Mesh identity ${agent.identity} stays registered and live with the Hub.`,
+          paint(YELLOW, "Adding it again here will be refused while it is registered."),
+          paint(DIM, "It is recoverable: an operator can re-register the identity, and"),
+          paint(DIM, "its key returns to pending for approval. Permanent loss needs a"),
+          paint(DIM, "Hub admin teardown, which this tool never performs."),
           paint(DIM, "Durable state, outbox and Blob spool are kept on disk."),
-          paint(DIM, "Releasing the identity is a Hub admin action, and a torn-down"),
-          paint(DIM, "name is retired rather than freed."),
         ]);
         let confirm: string;
         try {

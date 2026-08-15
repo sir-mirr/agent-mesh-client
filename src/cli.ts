@@ -546,12 +546,14 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       } else config.lanes[index]!.enabled = command === "enable";
     });
     print(saved);
-    // Local removal only. Releasing the Mesh identity is a Hub admin action,
-    // and § 9.3 retires a torn-down name rather than freeing it -- so this is
-    // the last point at which saying so costs nothing.
+    // Local removal only, and the identity stays live rather than torn down.
+    // `lane add` refuses it because this tool sends create_only; the Hub still
+    // allows an operator to re-register it, with the key back to pending.
     if (removedIdentity) {
       process.stderr.write(
-        `Mesh identity ${removedIdentity} remains registered with the Hub and cannot be added again.\n`,
+        `Mesh identity ${removedIdentity} remains registered with the Hub. ` +
+          `Adding it again here will be refused while it is registered; recovering it ` +
+          `means re-registering the identity and having its key approved again.\n`,
       );
     }
     return 0;
