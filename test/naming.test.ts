@@ -102,6 +102,7 @@ function methodsIn(file: string, source: string): Method[] {
     // a class member, so `if (...)` and `for (...)` parse as members named
     // `if` and `for`. Left in, they take the writes of the function they are
     // in and answer for them under a name nobody chose.
+    if (match && KEYWORDS.has(match[1]!)) rawKeywordHits += 1;
     if (match && !KEYWORDS.has(match[1]!)) {
       current = { file, name: match[1]!, line: index + 1, body: [] };
       methods.push(current);
@@ -134,6 +135,8 @@ function namedForWriting(name: string): boolean {
   return segments.some((segment) => MUTATING.includes(segment));
 }
 
+let rawKeywordHits = 0;
+
 const methods = (
   await Promise.all(
     (await sourceFiles("src")).map(async (file) => methodsIn(file, await readFile(file, "utf8"))),
@@ -159,6 +162,16 @@ describe("methods that write are named for it", () => {
       .map((method) => `${method.file}:${method.line} ${method.name}`);
     expect(keywords).toEqual([]);
     expect(methods.length).toBeGreaterThan(200);
+  });
+
+  // Asserting only that no keyword survives lets the filter be deleted, so
+  // long as nothing happens to produce one that day. Requiring that the
+  // unfiltered scan does produce them makes the filter itself the thing under
+  // test: it has to still be carrying weight for this to pass.
+  test("the keyword filter is load-bearing rather than decorative", () => {
+    const unfiltered = methods.length + rawKeywordHits;
+    expect(rawKeywordHits).toBeGreaterThan(50);
+    expect(rawKeywordHits / unfiltered).toBeGreaterThan(0.2);
   });
 
   test("no method writes under a name that does not say so", () => {
