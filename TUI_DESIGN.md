@@ -201,7 +201,7 @@ Workspace     /home/user/work/agent-a
  [Enter] Continue
 ```
 
-Agent Identity는 기본값 없이 필수로 입력받는다. Identity는 Hub에서 영구적이고 대소문자를 구분하며 soft delete 후 재사용되지 않으므로 최종 적용 전 별도로 확인한다. 로컬 lane ID는 Identity를 lowercase kebab-case로 정규화해 자동 생성하고, 충돌 시 숫자 suffix를 붙인다. tmux session 이름, UDS와 state 경로는 이 내부 lane ID로부터 자동 파생한다.
+Agent Identity는 기본값 없이 필수로 입력받는다. 로컬 config 중복과 Hub 전체 registry를 모두 조회하고, 이미 등록됐거나 soft-delete로 예약된 Identity는 거부한다. Hub에 연결할 수 없거나 조회 응답이 불명확하면 저장하지 않는 fail-closed 동작을 사용한다. Identity는 Hub에서 영구적이고 대소문자를 구분하며 soft delete 후 재사용되지 않는다. 로컬 lane ID는 Identity를 lowercase kebab-case로 정규화해 자동 생성하고, 충돌 시 숫자 suffix를 붙인다. tmux session 이름, UDS와 state 경로는 이 내부 lane ID로부터 자동 파생한다.
 
 Antigravity를 선택하면 one-shot capability, MCP와 인증 상태를 추가로 검사한다.
 
@@ -606,7 +606,7 @@ Validate → Prepare identity/key → Register public key → Create tmux → St
  API              https://mesh.example.com/api/v1
  Protocol         1.2
  Audit protocol   1
- Contract         @agent-mesh/contracts v0.5.1
+ Contract         @agent-mesh/contracts v0.6.0
  Audit limits     100 MiB/file · 32 files · 256 MiB/event
  In-flight        append 4 · upload 2
  Audit storage    ● Available
@@ -706,7 +706,7 @@ Identity 목록은 상태와 fingerprint를 표시하고 다음 동작으로 연
    ✓ Audit protocol 1 and limits supported
 
  Contract
-   ✓ @agent-mesh/contracts v0.5.1 locked
+   ✓ @agent-mesh/contracts v0.6.0 locked
    ✓ agentMeshSpec 0.2 compatible
    ✓ TypeBox runtime schemas and byte fixtures
 

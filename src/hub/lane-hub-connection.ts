@@ -6,10 +6,14 @@ import type { LaneOutbox } from "../outbox/lane-outbox";
 import { AuditWorker, type AuditWorkerStatus } from "./audit-worker";
 import { resolveHubEndpoints } from "./endpoints";
 import { MeshClient } from "./mesh-client";
-import { provisionAgent } from "./provisioning";
+import {
+  AgentIdentityConflictError,
+  lookupAgentIdentity,
+  provisionAgent,
+} from "./provisioning";
 
 export interface LaneHubStatus {
-  state: "stopped" | "connecting" | "connected" | "approval" | "retrying";
+  state: "stopped" | "connecting" | "connected" | "approval" | "retrying" | "conflict";
   identity: string;
   fingerprint: string | null;
   keyStatus: string | null;
@@ -93,15 +97,40 @@ export class LaneHubConnection {
         this.#status = { ...this.#status, state: "connecting", lastError: null };
         const key = await this.keyManager.ensure();
         this.#status = { ...this.#status, fingerprint: key.fingerprint };
-        const provisioned = await provisionAgent(this.mesh.endpoints, {
-          identity: this.lane.identity,
-          type: this.lane.agent_type,
-          description: `Agent Mesh lane ${this.lane.id}`,
-          public_key: key.publicKey,
-        });
+        const registered = await lookupAgentIdentity(this.mesh.endpoints, this.lane.identity);
+        let keyStatus: string;
+        if (registered) {
+          if (registered.deleted) {
+            throw new AgentIdentityConflictError(
+              this.lane.identity,
+              "IDENTITY_DELETED",
+              `Agent Identity is permanently reserved after deletion: ${this.lane.identity}`,
+            );
+          }
+          const ownKey = registered.keys.find(
+            (candidate) => candidate.fingerprint === key.fingerprint,
+          );
+          if (!ownKey) {
+            throw new AgentIdentityConflictError(
+              this.lane.identity,
+              "IDENTITY_EXISTS",
+              `Agent Identity belongs to a different key: ${this.lane.identity}`,
+            );
+          }
+          keyStatus = ownKey.status;
+        } else {
+          const provisioned = await provisionAgent(this.mesh.endpoints, {
+            identity: this.lane.identity,
+            type: this.lane.agent_type,
+            description: `Agent Mesh lane ${this.lane.id}`,
+            public_key: key.publicKey,
+            create_only: true,
+          });
+          keyStatus = provisioned.key?.status ?? "legacy-unverified";
+        }
         this.#status = {
           ...this.#status,
-          keyStatus: provisioned.key?.status ?? "legacy-unverified",
+          keyStatus,
         };
         await this.mesh.connect();
         this.#status = { ...this.#status, state: "connected", lastError: null };
@@ -114,6 +143,18 @@ export class LaneHubConnection {
           await this.#sleep(1_000);
         }
       } catch (error) {
+        if (error instanceof AgentIdentityConflictError) {
+          this.#status = {
+            ...this.#status,
+            state: "conflict",
+            lastError: `${error.code}: ${error.message}`,
+          };
+          await new Promise<void>((resolve) => {
+            if (this.#abort.signal.aborted) return resolve();
+            this.#abort.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          break;
+        }
         const approval = this.mesh.status.state === "approval";
         this.#status = {
           ...this.#status,

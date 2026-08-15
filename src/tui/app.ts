@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { ConfigStore } from "../config/store";
 import type { LaneConfig, RuntimeKind } from "../config/types";
 import { probeHostDaemon, requestControl } from "../daemon/host-daemon";
-import { probeHub } from "../hub/endpoints";
+import { probeHub, resolveHubEndpoints, type HubEndpoints } from "../hub/endpoints";
+import { lookupAgentIdentity } from "../hub/provisioning";
 import { SecretStore } from "../config/secrets";
 import { installUserService } from "../service/user-service";
 import { IDENTITY_RE } from "@agent-mesh/contracts";
@@ -71,6 +72,7 @@ export function deriveLaneId(
 async function askAgentIdentity(
   reader: Reader,
   existing: readonly LaneConfig[],
+  endpoints: HubEndpoints,
 ): Promise<string> {
   while (true) {
     const identity = await ask(reader, "Agent Identity");
@@ -88,16 +90,27 @@ async function askAgentIdentity(
       process.stdout.write("That Agent Identity is already assigned to a local lane.\n");
       continue;
     }
+    process.stdout.write("Checking Agent Identity in Mesh…\n");
+    const registered = await lookupAgentIdentity(endpoints, identity);
+    if (registered) {
+      const state = registered.deleted
+        ? "soft-deleted and permanently reserved"
+        : `already registered${registered.keyStatus ? `; key ${registered.keyStatus}` : ""}`;
+      process.stdout.write(`That Agent Identity is ${state}. Choose another identity.\n`);
+      continue;
+    }
+    process.stdout.write("✓ Agent Identity is available in Mesh.\n");
     return identity;
   }
 }
 
 async function createLane(
   reader: Reader,
+  endpoints: HubEndpoints,
   existing: readonly LaneConfig[] = [],
 ): Promise<LaneConfig> {
   heading("Create lane");
-  const identity = await askAgentIdentity(reader, existing);
+  const identity = await askAgentIdentity(reader, existing, endpoints);
   const id = deriveLaneId(identity, existing.map((lane) => lane.id));
   process.stdout.write(`Local lane ID: ${id}\n`);
   const runtimeInput = await ask(
@@ -161,7 +174,9 @@ async function ensureOnboarding(reader: Reader, options: TuiOptions): Promise<vo
     await reader.question("Press Enter to continue");
   }
   if (config.lanes.length === 0) {
-    config.lanes.push(await createLane(reader, config.lanes));
+    if (!config.hub) throw new Error("Hub must be configured before creating a lane");
+    const endpoints = resolveHubEndpoints(config.hub.base_url, config.hub);
+    config.lanes.push(await createLane(reader, endpoints, config.lanes));
     changed = true;
   }
   if (changed) await store.save(config);
@@ -248,7 +263,9 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
     if (action === "a") {
       const store = new ConfigStore(options.configFile);
       const config = await store.load();
-      config.lanes.push(await createLane(reader, config.lanes));
+      if (!config.hub) throw new Error("Hub must be configured before creating a lane");
+      const endpoints = resolveHubEndpoints(config.hub.base_url, config.hub);
+      config.lanes.push(await createLane(reader, endpoints, config.lanes));
       await store.save(config);
       await requestControl(options.runtimeDirectory, "config.reload", {});
     } else if (action === "l") {

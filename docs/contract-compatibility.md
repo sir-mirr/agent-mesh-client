@@ -5,11 +5,11 @@
 ## 현재 기준
 
 - 공개 저장소: [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts)
-- 고정 tag: `v0.5.1`
+- 고정 tag: `v0.6.0`
 - Hub SPEC baseline: `0.2`
 - 소비 방식: immutable Git tag + Bun lockfile, npm registry publish 없음
 
-포함 surface는 Ed25519 request/upload preimage, Blob key, audit limits/error classification, TypeBox provisioning/message schema, mailbox lease/ACK와 `client_message_id` 멱등성입니다. Client는 preimage나 공유 상수를 복제하지 않습니다.
+포함 surface는 Ed25519 request/upload preimage, Blob key, audit limits/error classification, TypeBox provisioning/message schema, mailbox lease/ACK, `client_message_id` 멱등성과 원자적 `create_only` Identity 등록입니다. Client는 preimage나 공유 상수를 복제하지 않습니다.
 
 ## 호환 정책
 
@@ -29,3 +29,4 @@
 - 실제 Blob PUT, audit append final ACK와 admin query를 확인합니다.
 - 동일 `reply_to` 구조로 자동응답 loop가 생기지 않는지 확인합니다.
 - 동일 `client_message_id` 재전송은 원 message ID와 `duplicate:true`를 반환해야 합니다.
+- 신규 lane 등록은 `create_only:true`를 사용하며 기존/soft-deleted Identity와 원래 key를 변경하지 않고 409로 거부돼야 합니다.

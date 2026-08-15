@@ -36,7 +36,7 @@ agent-mesh
 agent-mesh
 ```
 
-TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 받습니다. 로컬 Lane ID는 Identity에서 자동 생성되며 Hub identity로 사용되지 않습니다. 설치 시 등록된 단일 데몬은 설정 변경을 감지하며, Claude lane은 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
+TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 받습니다. Identity는 저장 전에 Hub 전체 registry에서 중복을 조회하며 Hub에 연결할 수 없거나 조회 응답이 불명확하면 fail-closed합니다. 로컬 Lane ID는 Identity에서 자동 생성되며 Hub identity로 사용되지 않습니다. 설치 시 등록된 단일 데몬은 설정 변경을 감지하며, Claude lane은 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
 
 ```sh
 agent-mesh attach <lane-id>
@@ -120,4 +120,4 @@ AGENT_MESH_E2E_READY_FILE=/tmp/mesh-ready.json bun run test:e2e:live
 - [`docs/acceptance-tests.md`](./docs/acceptance-tests.md) — 수용 기준과 검증 상태
 - [`TUI_DESIGN.md`](./TUI_DESIGN.md) — TUI 화면·운영 계약
 
-Wire contract는 공개 저장소 `sir-mirr/agent-mesh-contracts`의 immutable Git tag를 사용합니다. npm registry publish는 필수가 아니며, 현재 client는 `v0.5.1`에 고정돼 있습니다.
+Wire contract는 공개 저장소 `sir-mirr/agent-mesh-contracts`의 immutable Git tag를 사용합니다. npm registry publish는 필수가 아니며, 현재 client는 `v0.6.0`에 고정돼 있습니다.

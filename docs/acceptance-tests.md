@@ -27,6 +27,7 @@
 | `AT-019` | `SEC-002`, `CON-001` | key pending/approved/revoked, freshness, nonce replay와 upload signature fixture를 통과한다. |
 | `AT-020` | `UX-001`, `UX-002` | YAML/UDS/port 수동 편집 없이 TUI와 동등 CLI로 첫 lane을 생성·기동한다. |
 | `AT-021` | `DIST-001` | Bun/Node/npm이 없는 지원 OS에서 release binary와 installer로 설치·doctor를 완료한다. |
+| `AT-022` | `SEC-003` | 등록된 Identity takeover를 `IDENTITY_EXISTS`로 거부하고 원 key set이 불변이며, 동일 persisted key를 가진 daemon restart만 재연결한다. |
 
 ## 실행된 검증
 
@@ -34,7 +35,7 @@
 
 - `bun run check`: TypeScript 7 strict/exact optional 검사
 - `bun test`: framing, config, outbox/Blob, Driver RPC, daemon UDS, reply-loop guard, Codex/Antigravity transport fixture
-- `bun run test:e2e:live`: 실제 platform harness에서 key pending/approve, signed 한글 params, `client_message_id` duplicate, mesh reply guard, channel attachment, Blob PUT, 3종 audit final ACK와 admin query
+- `bun run test:e2e:live`: 실제 platform harness에서 key pending/approve, atomic Identity takeover 거부와 restart key reuse, signed 한글 params, `client_message_id` duplicate, mesh reply guard, channel attachment, Blob PUT, 3종 audit final ACK와 admin query
 - Claude Code 2.1.116 + tmux 3.6a live smoke: development channel inbound → 모델 turn → MCP `reply` → immutable provider correlation
 - Codex CLI App Server live smoke: signed mesh inbound → authoritative final agent message → Hub reply
 - Antigravity CLI 1.1.13 live smoke: `--print <prompt> --output-format json` → `SUCCESS` envelope/conversation ID/final response

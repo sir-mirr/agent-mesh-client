@@ -14,6 +14,8 @@ import {
 import { runTui } from "./tui/app";
 import { runClaudeChannelMcp } from "./runtime/claude-channel-mcp";
 import { runDiscordDriver } from "./channel-driver/discord";
+import { resolveHubEndpoints } from "./hub/endpoints";
+import { lookupAgentIdentity } from "./hub/provisioning";
 import { SecretStore } from "./config/secrets";
 import {
   installUserService,
@@ -330,9 +332,26 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       throw new Error("unrestricted mode requires --acknowledge-risk");
     }
     const model = option(options, "--model");
+    const identity = option(options, "--identity") ?? value;
+    const current = await new ConfigStore(options.configFile).load();
+    if (!current.hub) {
+      throw new Error("Configure a Hub before adding a lane so Agent Identity can be checked");
+    }
+    if (current.lanes.some((item) => item.identity === identity)) {
+      throw new Error(`Agent Identity is already assigned locally: ${identity}`);
+    }
+    const registered = await lookupAgentIdentity(
+      resolveHubEndpoints(current.hub.base_url, current.hub),
+      identity,
+    );
+    if (registered) {
+      throw new Error(
+        `Agent Identity already exists in Mesh: ${identity} (${registered.deleted ? "soft-deleted" : registered.keyStatus ?? "registered"})`,
+      );
+    }
     const lane: LaneConfig = {
       id: value,
-      identity: option(options, "--identity") ?? value,
+      identity,
       agent_type: option(options, "--agent-type") ?? defaultAgentType(kind),
       enabled: true,
       runtime: {

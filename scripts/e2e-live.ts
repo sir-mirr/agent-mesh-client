@@ -7,6 +7,11 @@ import { ConfigStore } from "../src/config/store";
 import type { AgentMeshConfig, LaneConfig } from "../src/config/types";
 import { AgentMeshDaemon } from "../src/daemon/agent-mesh-daemon";
 import { requestControl } from "../src/daemon/host-daemon";
+import {
+  AgentIdentityConflictError,
+  lookupAgentIdentity,
+  provisionAgent,
+} from "../src/hub/provisioning";
 
 interface HarnessReady {
   base_url: string;
@@ -118,7 +123,7 @@ async function json<T>(url: string, cookie: string, init: RequestInit = {}): Pro
   return body;
 }
 
-const daemon = new AgentMeshDaemon({
+const daemonOptions = {
   configFile,
   stateDirectory,
   runtimeDirectory,
@@ -127,7 +132,8 @@ const daemon = new AgentMeshDaemon({
     process.stderr.write(
       `[e2e] ${message}${error instanceof Error ? `: ${error.message}` : ""}\n`,
     ),
-});
+};
+let daemon = new AgentMeshDaemon(daemonOptions);
 let driver: ChannelDriverClient | null = null;
 let passed = false;
 
@@ -279,12 +285,63 @@ try {
       : null;
   }, 30_000);
 
+  const endpoints = {
+    baseUrl: ready.base_url,
+    rpcWebSocket: ready.rpc_ws,
+    apiHttp: ready.api_http,
+  };
+  const beforeConflict = await lookupAgentIdentity(endpoints, "E2ECodexA");
+  if (!beforeConflict) throw new Error("Registered E2E identity disappeared before conflict test");
+  const takeoverPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  const takeoverPublicKey = Buffer.from(
+    await crypto.subtle.exportKey("raw", takeoverPair.publicKey),
+  ).toString("base64url");
+  let conflictCode: string | null = null;
+  try {
+    await provisionAgent(endpoints, {
+      identity: "E2ECodexA",
+      type: "ai-codex",
+      public_key: takeoverPublicKey,
+      create_only: true,
+    });
+  } catch (error) {
+    if (!(error instanceof AgentIdentityConflictError)) throw error;
+    conflictCode = error.code;
+  }
+  if (conflictCode !== "IDENTITY_EXISTS") {
+    throw new Error("Atomic create-only provisioning did not reject an identity takeover");
+  }
+  const afterConflict = await lookupAgentIdentity(endpoints, "E2ECodexA");
+  if (JSON.stringify(afterConflict?.keys) !== JSON.stringify(beforeConflict.keys)) {
+    throw new Error("Rejected identity takeover changed the original key set");
+  }
+
+  driver.close();
+  driver = null;
+  await daemon.stop();
+  daemon = new AgentMeshDaemon(daemonOptions);
+  await daemon.start();
+  await waitFor("daemon restart reuses its approved identity key", async () => {
+    const lanes = await requestControl(runtimeDirectory, "lane.list", {}) as Array<{
+      hub: { state: string } | null;
+    }>;
+    return lanes.length === 2 && lanes.every((item) => item.hub?.state === "connected")
+      ? lanes
+      : null;
+  }, 45_000);
+
   passed = true;
   process.stdout.write(`${JSON.stringify({
     ok: true,
     harness_state: ready.state_dir,
     client_state: root,
-    mesh: { message_id: sent.id, idempotent_replay: true, reply_loop_guard: true },
+    mesh: {
+      message_id: sent.id,
+      idempotent_replay: true,
+      reply_loop_guard: true,
+      identity_takeover_guard: conflictCode,
+      restart_identity_reused: true,
+    },
     channel: { delivered: delivered.length, inbound_audit_event_id: inbound.audit_event_id },
     audit: { acked: summary.acked, queried: audit.events.length, attachment: audit.inboundEvent.attachments[0] },
   }, null, 2)}\n`);
