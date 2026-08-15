@@ -121,4 +121,6 @@ AGENT_MESH_E2E_READY_FILE=/tmp/mesh-ready.json bun run test:e2e:live
 - [`docs/acceptance-tests.md`](./docs/acceptance-tests.md) — 수용 기준과 검증 상태
 - [`TUI_DESIGN.md`](./TUI_DESIGN.md) — TUI 화면·운영 계약
 
-Wire contract는 공개 저장소 `sir-mirr/agent-mesh-contracts`의 immutable Git tag를 사용합니다. npm registry publish는 필수가 아니며, 현재 client는 `v0.6.0`에 고정돼 있습니다.
+Wire contract는 공개 저장소 `sir-mirr/agent-mesh-contracts`의 immutable Git tag를 사용합니다. npm registry publish는 필수가 아니며, 현재 client는 `v0.7.4`에 고정돼 있습니다. 계약의 소유자는 platform 쪽이며 client는 tag를 고정해 소비만 합니다.
+
+Hub RPC 실패는 숫자 코드로 재시도 정책을, `error.data.code` 문자열로 어떤 조건이었는지를 판정합니다. 하나의 숫자를 여러 조건이 공유하므로 둘 다 필요합니다. 분류되지 않은 코드의 처리는 호출 지점이 정합니다 — outbox가 뒤에 있는 감사 경로는 `errorClass(code, "transient")`, 나중에 비울 것이 없는 connect·send 경로는 `"permanent"`입니다.

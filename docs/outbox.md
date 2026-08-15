@@ -27,6 +27,8 @@ stateDiagram-v2
     RETRY_WAIT --> PENDING_APPEND: blobs already confirmed
     PENDING_BLOBS --> DEAD_LETTER: permanent failure
     PENDING_APPEND --> DEAD_LETTER: permanent failure
+    DEAD_LETTER --> PENDING_BLOBS: operator replay, blobs unconfirmed
+    DEAD_LETTER --> PENDING_APPEND: operator replay, blobs confirmed
     ACKED --> [*]: local retention cleanup eligible
 ```
 
@@ -94,6 +96,9 @@ Hub 적재는 Blob prepare/전체 PUT, audit append 순서로 진행한다. Hub�
 | signature clock/nonce 문제 | 새 nonce/iat로 재서명하고 clock/key 진단 |
 | protocol/schema 상위 incompatibility | 송신 정지, payload 유지, Hub 선행 upgrade 안내 |
 | permanent validation/identity 오류 | dead-letter 격리, 자동 hot retry 중지 |
+| 분류되지 않은 코드 | 호출 지점이 정한다. 감사 경로는 `transient` — 잘못된 재시도는 backoff 상한 안이고 큐가 흡수한다 |
+
+dead-letter는 격리이지 삭제가 아니며, `agent-mesh outbox replay --lane ID [--event-id ID ...]`로 다시 큐에 넣는다. 첨부가 미확인이면 `PENDING_BLOBS`로, 확인됐으면 `PENDING_APPEND`로 복귀한다. DEAD_LETTER가 아닌 event는 거부한다 — ACKED를 되돌리면 Hub가 이미 받은 event를 재전송한다. `attempt_count`와 `last_error_code`는 유지한다. 이 명령이 필요한 대표 사례는 버전 스큐다: client가 모르는 코드를 호출 지점 기본값으로 분류했고 그 판단이 틀린 경우, 멈춘 event들은 정상이며 다음 시도에서 append된다.
 
 Blob upload는 chunk/resume하지 않는다. 180초 timeout이나 중간 실패 뒤 다음 attempt에서 file 처음부터 다시 PUT한다.
 

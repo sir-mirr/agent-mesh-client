@@ -527,7 +527,7 @@ interface DashboardLane {
   }>;
 }
 
-type AgentAction = "keys" | "channels" | "attach" | "toggle" | "remove" | "back";
+type AgentAction = "keys" | "channels" | "attach" | "replay" | "toggle" | "remove" | "back";
 
 function stateColor(state: string): string {
   const normalized = state.toLowerCase();
@@ -652,6 +652,19 @@ function agentActions(agent: DashboardLane): readonly GridChoice<AgentAction>[] 
     { value: "keys", icon: "◆", label: "Identity Key", description: "Approval and fingerprint" },
     { value: "channels", icon: "#", label: "Channels", description: "Manage channel drivers" },
     { value: "attach", icon: "⌁", label: "Attach Runtime", description: "Open the CLI session" },
+    // Only when there is something to replay. The status panel paints a
+    // dead-letter count red, and an always-present action that usually does
+    // nothing teaches the operator to ignore the one time it matters.
+    ...(agent.outbox.deadLetter > 0
+      ? ([
+          {
+            value: "replay",
+            icon: "↺",
+            label: "Replay Dead Letters",
+            description: `Requeue ${agent.outbox.deadLetter} quarantined event(s)`,
+          },
+        ] as const)
+      : []),
     {
       value: "toggle",
       icon: agent.enabled ? "○" : "●",
@@ -673,7 +686,12 @@ function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
     `Key        ${paint(stateColor(agent.hub?.keyStatus ?? "unknown"), agent.hub?.keyStatus ?? "unknown")}`,
     `Runtime    ${paint(stateColor(runtimeState), runtimeState)}`,
     `Channels   ${agent.channels.length ? agent.channels.map((item) => `${item.id}:${item.status.state}`).join(", ") : "none"}`,
-    `Outbox     ${agent.outbox.pending}/${agent.outbox.retry}/${agent.outbox.deadLetter}`,
+    // Spelled out here rather than the overview's three slashed numbers: this
+    // is the screen where an operator decides whether to act on them.
+    `Outbox     ${agent.outbox.pending} pending · ${agent.outbox.retry} retry · ${paint(
+      agent.outbox.deadLetter > 0 ? RED : DIM,
+      `${agent.outbox.deadLetter} dead-letter`,
+    )}`,
   ];
   const error = agent.hub?.lastError ?? agent.runtime_status.lastError;
   if (error) statusLines.push(paint(RED, `! ${clip(error, frameWidth() - 6)}`));
@@ -770,6 +788,24 @@ async function agentDetail(
       await channelsScreen(reader, options, agent.lane_id);
     } else if (selection.value === "attach") {
       await attachAgentRuntime(reader, agent);
+    } else if (selection.value === "replay") {
+      const result = (await requestControl(options.runtimeDirectory, "outbox.replay", {
+        lane_id: agent.lane_id,
+      })) as { replayed?: number; skipped?: number };
+      heading(`Replay dead letters · ${agent.identity}`);
+      writePanel("Outbox replay", [
+        `Requeued   ${result.replayed ?? 0}`,
+        `Skipped    ${result.skipped ?? 0}`,
+        // Nothing here promises the append will succeed. A payload the Hub
+        // refuses for its own content dead-letters again on the next attempt,
+        // and its attempt count is the thing that says so.
+        paint(DIM, "Requeued events keep their attempt count and last error."),
+      ]);
+      try {
+        await ask(reader, "\nPress Enter to go back", undefined, true);
+      } catch (error) {
+        if (!(error instanceof BackNavigation)) throw error;
+      }
     } else {
       const store = new ConfigStore(options.configFile);
       const config = await store.load();
