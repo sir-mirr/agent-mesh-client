@@ -11,14 +11,16 @@
  * only when mail actually lands. A cron firing every ten minutes would instead
  * start a session each time to discover an empty inbox.
  *
- * **This peeks; it does not clear.** Two reasons. Bodies run to 10 MB and a
- * notification is not the place for one. And clearing here would race the Stop
- * hook, which is the component that actually delivers — dropping the message
- * into the gap between the two. So it reports ids and previews, the model wakes,
- * and `mailbox.ts` hands over the full text at the end of that turn.
+ * **This reports; `mailbox.ts` delivers.** Bodies run to 10 MB and a
+ * notification is not the place for one, so this sends ids and previews, the
+ * model wakes, and the hook hands over the full text at the end of that turn.
  *
- * Ids come from a single counter in the mailer and only increase, so tracking a
- * high-water mark stays correct even after the hook empties the inbox.
+ * Nothing here writes the hook's mark file. A GET does mark messages read in
+ * the mailer, which is why the hook keys off its own mark rather than `isRead`
+ * — this watcher would otherwise consume every message before the hook saw it.
+ *
+ * Ids come from a single counter in the mailer and only increase, so a
+ * high-water mark stays correct across restarts of either side.
  *
  * AGENT_ID defaults to this repository's identity for the same reason it does
  * in `mailbox.ts`: inheriting the upstream default would watch the other side's
