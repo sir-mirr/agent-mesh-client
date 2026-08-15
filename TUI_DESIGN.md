@@ -178,10 +178,12 @@ Agent Mesh TUI
 ```text
  CLI Runtime: [Claude] [Codex] [AntiGravity]
 
+ Security Profile: [Sandboxed] [Workspace] [Unrestricted]
+
  [←/→ or Tab] Move   [Enter] Select
 ```
 
-선택 항목은 강조 표시한다. 좌우 방향키 또는 Tab으로 이동하고 Enter로 확정한다. Runtime을 선택하면 해당 CLI, 인증과 transport capability를 검사한다.
+선택 항목은 강조 표시한다. 좌우 방향키 또는 Tab으로 이동하고 Enter로 확정한다. CLI Runtime은 Claude, Security Profile은 Workspace를 최초 강조 항목으로 표시한다. Runtime을 선택하면 해당 CLI, 인증과 transport capability를 검사한다. Unrestricted 선택 시에는 별도 위험 확인을 거쳐야 한다.
 
 ```text
  Create first lane

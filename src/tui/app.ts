@@ -1,7 +1,12 @@
 import { createInterface } from "node:readline/promises";
+import { emitKeypressEvents } from "node:readline";
 import { resolve } from "node:path";
 import { ConfigStore } from "../config/store";
-import type { LaneConfig, RuntimeKind } from "../config/types";
+import type {
+  LaneConfig,
+  RuntimeKind,
+  RuntimeSecurityConfig,
+} from "../config/types";
 import { probeHostDaemon, requestControl } from "../daemon/host-daemon";
 import { probeHub, resolveHubEndpoints, type HubEndpoints } from "../hub/endpoints";
 import { lookupAgentIdentity } from "../hub/provisioning";
@@ -64,6 +69,7 @@ async function selectHorizontal<T extends string>(
 
   reader.pause();
   const previousRawMode = stdin.isRaw;
+  emitKeypressEvents(stdin);
   stdin.setRawMode(true);
   stdin.resume();
   let selected = initialIndex;
@@ -79,32 +85,34 @@ async function selectHorizontal<T extends string>(
 
   return await new Promise<T>((resolveChoice, reject) => {
     const cleanup = () => {
-      stdin.off("data", onData);
+      stdin.off("keypress", onKeypress);
       stdin.setRawMode(previousRawMode);
       reader.resume();
     };
-    const onData = (chunk: Buffer | string) => {
-      const key = chunk.toString();
-      if (key === "\u0003") {
+    const onKeypress = (
+      _input: string | undefined,
+      key: { name?: string; ctrl?: boolean },
+    ) => {
+      if (key.ctrl && key.name === "c") {
         cleanup();
         process.stdout.write("\n");
         reject(new Error("Selection cancelled"));
         return;
       }
-      if (key === "\r" || key === "\n") {
+      if (key.name === "return" || key.name === "enter") {
         const choice = choices[selected]!;
         cleanup();
         process.stdout.write("\n");
         resolveChoice(choice.value);
         return;
       }
-      if (key === "\u001b[D") selected = moveSelection(selected, choices.length, -1);
-      else if (key === "\u001b[C" || key === "\t") {
+      if (key.name === "left") selected = moveSelection(selected, choices.length, -1);
+      else if (key.name === "right" || key.name === "tab") {
         selected = moveSelection(selected, choices.length, 1);
       } else return;
       render();
     };
-    stdin.on("data", onData);
+    stdin.on("keypress", onKeypress);
     render();
   });
 }
@@ -199,15 +207,16 @@ async function createLane(
     ],
   );
   const workspace = resolve(await ask(reader, "Workspace", process.cwd()));
-  const securityInput = await ask(
+  const profile = await selectHorizontal<RuntimeSecurityConfig["profile"]>(
     reader,
-    "Security profile (sandboxed/workspace/unrestricted)",
-    "workspace",
+    "Security Profile",
+    [
+      { value: "sandboxed", label: "Sandboxed" },
+      { value: "workspace", label: "Workspace" },
+      { value: "unrestricted", label: "Unrestricted" },
+    ],
+    1,
   );
-  const profile =
-    securityInput === "sandboxed" || securityInput === "unrestricted"
-      ? securityInput
-      : "workspace";
   let acknowledgedRisk = false;
   if (profile === "unrestricted") {
     heading("Confirm unrestricted runtime");
