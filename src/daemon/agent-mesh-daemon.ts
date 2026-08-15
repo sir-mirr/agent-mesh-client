@@ -410,24 +410,32 @@ export class AgentMeshDaemon {
         return this.#config;
       case "lane.list":
         return await Promise.all(
-          [...this.#controllers.entries()].map(async ([laneId, controller]) => ({
-            lane_id: laneId,
-            runtime: controller.config.runtime.kind,
-            outbox: await controller.outbox.summary(),
-            hub: this.#hubConnections.get(laneId)?.status ?? null,
-            runtime_status:
-              this.#claudeSupervisors.get(laneId)?.status ?? {
-                state: controller.runtimeInbox.next() ? "queued" : "idle",
-              },
-            channels: controller.config.channels.map((channel) => ({
-              id: channel.id,
-              provider: channel.provider,
-              enabled: channel.enabled,
-              status: this.#channelSupervisors.get(channel.id)?.status ?? {
-                state: channel.enabled ? "stopped" : "disabled",
-              },
-            })),
-          })),
+          (this.#config?.lanes ?? []).map(async (lane) => {
+            const controller = this.#controllers.get(lane.id);
+            return {
+              lane_id: lane.id,
+              identity: lane.identity,
+              enabled: lane.enabled,
+              runtime: lane.runtime.kind,
+              outbox: controller
+                ? await controller.outbox.summary()
+                : { pending: 0, retry: 0, deadLetter: 0, warning: false },
+              hub: this.#hubConnections.get(lane.id)?.status ?? null,
+              runtime_status: !lane.enabled
+                ? { state: "disabled" }
+                : this.#claudeSupervisors.get(lane.id)?.status ?? {
+                    state: controller?.runtimeInbox.next() ? "queued" : "idle",
+                  },
+              channels: lane.channels.map((channel) => ({
+                id: channel.id,
+                provider: channel.provider,
+                enabled: channel.enabled,
+                status: this.#channelSupervisors.get(channel.id)?.status ?? {
+                  state: channel.enabled ? "stopped" : "disabled",
+                },
+              })),
+            };
+          }),
         );
       case "outbox.summary": {
         const params = request.params as { lane_id?: unknown } | undefined;

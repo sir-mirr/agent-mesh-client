@@ -23,6 +23,13 @@ export interface TuiOptions {
 
 type Reader = ReturnType<typeof createInterface>;
 
+class BackNavigation extends Error {
+  constructor() {
+    super("Back");
+    this.name = "BackNavigation";
+  }
+}
+
 const RESET = "\u001b[0m";
 const BOLD = "\u001b[1m";
 const DIM = "\u001b[2m";
@@ -86,9 +93,46 @@ function writePanel(title: string, lines: readonly string[]): void {
   process.stdout.write(`${paint(CYAN, `╰${"─".repeat(width - 2)}╯`)}\n`);
 }
 
-async function ask(reader: Reader, prompt: string, fallback?: string): Promise<string> {
+async function question(
+  reader: Reader,
+  prompt: string,
+  allowBack: boolean,
+): Promise<string> {
+  if (!allowBack) return await reader.question(prompt);
+  const controller = new AbortController();
+  const stdin = process.stdin;
+  emitKeypressEvents(stdin);
+  const onKeypress = (
+    _input: string | undefined,
+    key: { name?: string },
+  ) => {
+    const currentLine = (reader as Reader & { line?: string }).line ?? "";
+    if (key.name === "escape" || (key.name === "backspace" && currentLine.length === 0)) {
+      controller.abort();
+    }
+  };
+  stdin.on("keypress", onKeypress);
+  try {
+    return await reader.question(prompt, { signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      process.stdout.write("\n");
+      throw new BackNavigation();
+    }
+    throw error;
+  } finally {
+    stdin.off("keypress", onKeypress);
+  }
+}
+
+async function ask(
+  reader: Reader,
+  prompt: string,
+  fallback?: string,
+  allowBack = false,
+): Promise<string> {
   const suffix = fallback ? ` [${fallback}]` : "";
-  const answer = (await reader.question(`${prompt}${suffix}: `)).trim();
+  const answer = (await question(reader, `${prompt}${suffix}: `, allowBack)).trim();
   return answer || fallback || "";
 }
 
@@ -160,6 +204,12 @@ async function selectGrid<T extends string>(
       _input: string | undefined,
       key: { name?: string; ctrl?: boolean },
     ) => {
+      if (key.name === "escape" || key.name === "backspace") {
+        cleanup();
+        process.stdout.write("\n");
+        reject(new BackNavigation());
+        return;
+      }
       if (key.ctrl && key.name === "c") {
         cleanup();
         process.stdout.write("\n");
@@ -234,6 +284,12 @@ async function selectHorizontal<T extends string>(
       _input: string | undefined,
       key: { name?: string; ctrl?: boolean },
     ) => {
+      if (key.name === "escape" || key.name === "backspace") {
+        cleanup();
+        process.stdout.write("\n");
+        reject(new BackNavigation());
+        return;
+      }
       if (key.ctrl && key.name === "c") {
         cleanup();
         process.stdout.write("\n");
@@ -258,12 +314,12 @@ async function selectHorizontal<T extends string>(
   });
 }
 
-async function askSecret(reader: Reader, prompt: string): Promise<string> {
+async function askSecret(reader: Reader, prompt: string, allowBack = false): Promise<string> {
   if (process.platform !== "win32") {
     Bun.spawnSync(["stty", "-echo"], { stdin: "inherit", stdout: "ignore", stderr: "ignore" });
   }
   try {
-    return (await reader.question(`${prompt}: `)).trim();
+    return (await question(reader, `${prompt}: `, allowBack)).trim();
   } finally {
     if (process.platform !== "win32") {
       Bun.spawnSync(["stty", "echo"], { stdin: "inherit", stdout: "ignore", stderr: "ignore" });
@@ -300,7 +356,7 @@ async function askAgentIdentity(
   endpoints: HubEndpoints,
 ): Promise<string> {
   while (true) {
-    const identity = await ask(reader, "Agent Identity");
+    const identity = await ask(reader, "Agent Identity", undefined, true);
     if (!identity) {
       process.stdout.write("Agent Identity is required.\n");
       continue;
@@ -312,7 +368,7 @@ async function askAgentIdentity(
       continue;
     }
     if (existing.some((lane) => lane.identity === identity)) {
-      process.stdout.write("That Agent Identity is already assigned to a local lane.\n");
+      process.stdout.write("That Agent Identity is already assigned to a local agent.\n");
       continue;
     }
     process.stdout.write("Checking Agent Identity in Mesh…\n");
@@ -334,10 +390,10 @@ async function createLane(
   endpoints: HubEndpoints,
   existing: readonly LaneConfig[] = [],
 ): Promise<LaneConfig> {
-  heading("Create lane");
+  heading("Add agent");
+  process.stdout.write(`${paint(DIM, "Esc / empty Backspace  Back")}\n\n`);
   const identity = await askAgentIdentity(reader, existing, endpoints);
   const id = deriveLaneId(identity, existing.map((lane) => lane.id));
-  process.stdout.write(`Local lane ID: ${id}\n`);
   const runtime = await selectHorizontal<RuntimeKind>(
     reader,
     "CLI Runtime",
@@ -347,7 +403,7 @@ async function createLane(
       { value: "antigravity", label: "AntiGravity" },
     ],
   );
-  const workspace = resolve(await ask(reader, "Workspace", process.cwd()));
+  const workspace = resolve(await ask(reader, "Workspace", process.cwd(), true));
   const profile = await selectHorizontal<RuntimeSecurityConfig["profile"]>(
     reader,
     "Security Profile",
@@ -365,7 +421,12 @@ async function createLane(
       "This runtime may execute tools without permission prompts. The installer will not weaken this choice silently.\n\n",
     );
     acknowledgedRisk = (
-      await ask(reader, "I understand the risk and want unrestricted mode (y/N)", "N")
+      await ask(
+        reader,
+        "I understand the risk and want unrestricted mode (y/N)",
+        "N",
+        true,
+      )
     ).toLowerCase() === "y";
     if (!acknowledgedRisk) throw new Error("Unrestricted runtime was not acknowledged");
   }
@@ -398,12 +459,6 @@ async function ensureOnboarding(reader: Reader, options: TuiOptions): Promise<vo
     config.hub = { base_url: baseUrl };
     changed = true;
     await reader.question("Press Enter to continue");
-  }
-  if (config.lanes.length === 0) {
-    if (!config.hub) throw new Error("Hub must be configured before creating a lane");
-    const endpoints = resolveHubEndpoints(config.hub.base_url, config.hub);
-    config.lanes.push(await createLane(reader, endpoints, config.lanes));
-    changed = true;
   }
   if (changed) await store.save(config);
 }
@@ -453,8 +508,15 @@ async function startDaemon(options: TuiOptions): Promise<void> {
 
 interface DashboardLane {
   lane_id: string;
+  identity: string;
+  enabled: boolean;
   runtime: string;
-  hub: { state: string; keyStatus: string | null; lastError: string | null } | null;
+  hub: {
+    state: string;
+    keyStatus: string | null;
+    fingerprint?: string;
+    lastError: string | null;
+  } | null;
   runtime_status: { state: string; tmuxSession?: string; lastError?: string | null };
   outbox: { pending: number; retry: number; deadLetter: number; warning: boolean };
   channels: Array<{
@@ -465,30 +527,7 @@ interface DashboardLane {
   }>;
 }
 
-type DashboardAction =
-  | "refresh"
-  | "add"
-  | "lanes"
-  | "send"
-  | "inbox"
-  | "agents"
-  | "channels"
-  | "attach"
-  | "hub"
-  | "quit";
-
-const DASHBOARD_ACTIONS: readonly GridChoice<DashboardAction>[] = [
-  { value: "refresh", icon: "↻", label: "Refresh", description: "Reload live status" },
-  { value: "add", icon: "+", label: "Add lane", description: "Create an agent identity" },
-  { value: "lanes", icon: "≡", label: "Lanes", description: "Enable, disable or remove" },
-  { value: "send", icon: "↑", label: "Send message", description: "Send through the Mesh" },
-  { value: "inbox", icon: "↓", label: "Inbox / Reply", description: "Read and answer messages" },
-  { value: "agents", icon: "◇", label: "Mesh agents", description: "Browse participants" },
-  { value: "channels", icon: "#", label: "Channel drivers", description: "Discord and providers" },
-  { value: "attach", icon: "⌁", label: "Attach runtime", description: "Open the runtime session" },
-  { value: "hub", icon: "◆", label: "Hub & keys", description: "Connection and identity keys" },
-  { value: "quit", icon: "×", label: "Quit", description: "Leave Agent Mesh" },
-];
+type AgentAction = "keys" | "channels" | "attach" | "toggle" | "remove" | "back";
 
 function stateColor(state: string): string {
   const normalized = state.toLowerCase();
@@ -501,8 +540,8 @@ function stateColor(state: string): string {
   return YELLOW;
 }
 
-function actionCell(
-  action: GridChoice<DashboardAction>,
+function actionCell<T extends string>(
+  action: GridChoice<T>,
   selected: boolean,
   width: number,
   description: boolean,
@@ -515,9 +554,29 @@ function actionCell(
   return description ? paint(DIM, padded) : padded;
 }
 
+function overviewChoices(lanes: readonly DashboardLane[]): GridChoice<string>[] {
+  return [
+    ...lanes.map((agent) => ({
+      value: `agent:${agent.lane_id}`,
+      icon: "●",
+      label: agent.identity,
+      description: `${agent.runtime} runtime`,
+    })),
+    { value: "add", icon: "+", label: "Add Agent", description: "Register a new runtime" },
+    { value: "refresh", icon: "↻", label: "Refresh", description: "Reload live status" },
+    { value: "quit", icon: "×", label: "Quit", description: "Leave Agent Mesh" },
+  ];
+}
+
+function selectableLine(content: string, selected: boolean): string {
+  const padded = padVisible(clip(content, frameWidth() - 4), frameWidth() - 4);
+  return selected ? paint(SELECTED, padded) : padded;
+}
+
 function renderDashboard(
   lanes: readonly DashboardLane[],
   daemon: Awaited<ReturnType<typeof probeHostDaemon>>,
+  choices: readonly GridChoice<string>[],
   selectedIndex: number,
 ): void {
   const compact = (process.stdout.rows ?? 30) < 30;
@@ -527,55 +586,107 @@ function renderDashboard(
     ? `${paint(GREEN, "●")} ${paint(BOLD, "Daemon running")}`
     : `${paint(RED, "●")} ${paint(BOLD, "Daemon stopped")}`;
   writePanel("Host", [
-    `${daemonState}   ${paint(DIM, `PID ${daemon?.pid ?? "—"}  ·  Lanes ${lanes.length}  ·  Drivers ${activeDrivers}`)}`,
+    `${daemonState}   ${paint(DIM, `PID ${daemon?.pid ?? "—"}  ·  Agents ${lanes.length}  ·  Drivers ${activeDrivers}`)}`,
   ]);
   process.stdout.write("\n");
 
-  const laneLines: string[] = [];
+  const agentLines: string[] = [];
   if (!lanes.length) {
-    laneLines.push(
-      `${paint(YELLOW, "○")} No lanes configured`,
-      paint(DIM, "  Select Add lane to connect a runtime to the Mesh."),
+    agentLines.push(
+      `${paint(YELLOW, "○")} No agents registered.`,
+      paint(DIM, "  Select Add Agent to connect a runtime to the Mesh."),
     );
   } else {
-    const visibleLanes = lanes.slice(0, compact ? 2 : 3);
-    for (const [index, lane] of visibleLanes.entries()) {
-      const hubState = lane.hub?.state ?? "not-configured";
-      const runtimeState = lane.runtime_status.state;
-      const outboxColor = lane.outbox.deadLetter > 0
+    const terminalRows = process.stdout.rows ?? 30;
+    const rowsPerAgent = compact ? 1 : 2;
+    const maxVisible = Math.max(1, Math.floor((terminalRows - 17) / rowsPerAgent));
+    const selectedAgentIndex = Math.min(selectedIndex, lanes.length - 1);
+    let start = Math.max(0, selectedAgentIndex - maxVisible + 1);
+    if (selectedIndex >= lanes.length) start = Math.max(0, lanes.length - maxVisible);
+    const visibleAgents = lanes.slice(start, start + maxVisible);
+    if (start > 0) agentLines.push(paint(DIM, `  ↑ ${start} more agents`));
+    for (const [offset, agent] of visibleAgents.entries()) {
+      const index = start + offset;
+      const selected = index === selectedIndex;
+      const hubState = agent.hub?.state ?? "not-configured";
+      const runtimeState = agent.runtime_status.state;
+      const outboxColor = agent.outbox.deadLetter > 0
         ? RED
-        : lane.outbox.warning || lane.outbox.retry > 0
+        : agent.outbox.warning || agent.outbox.retry > 0
           ? YELLOW
           : GREEN;
-      if (compact) {
-        laneLines.push(
-          `${paint(stateColor(runtimeState), "●")} ${paint(BOLD, clip(lane.lane_id, 20))} ${paint(DIM, lane.runtime.toUpperCase())} · Hub ${paint(stateColor(hubState), hubState)} · Runtime ${paint(stateColor(runtimeState), runtimeState)} · Outbox ${paint(outboxColor, `${lane.outbox.pending}/${lane.outbox.retry}/${lane.outbox.deadLetter}`)}`,
-        );
+      const plainSummary = `${selected ? "›" : " "} ● ${agent.identity}  ${agent.runtime.toUpperCase()}  · Hub ${hubState} · Runtime ${runtimeState}`;
+      if (selected) {
+        agentLines.push(selectableLine(plainSummary, true));
       } else {
-        laneLines.push(
-          `${paint(stateColor(runtimeState), "●")} ${paint(BOLD, clip(lane.lane_id, 28))}  ${paint(DIM, lane.runtime.toUpperCase())}`,
-          `  Hub ${paint(stateColor(hubState), hubState)}  ·  Runtime ${paint(stateColor(runtimeState), runtimeState)}  ·  Outbox ${paint(outboxColor, `${lane.outbox.pending}/${lane.outbox.retry}/${lane.outbox.deadLetter}`)}`,
-          `  Channels ${lane.channels.length ? clip(lane.channels.map((item) => `${item.id}:${item.status.state}`).join(", "), frameWidth() - 15) : paint(DIM, "none")}`,
+        agentLines.push(
+          `${paint(stateColor(runtimeState), "●")} ${paint(BOLD, clip(agent.identity, 24))}  ${paint(DIM, agent.runtime.toUpperCase())}  · Hub ${paint(stateColor(hubState), hubState)} · Runtime ${paint(stateColor(runtimeState), runtimeState)}`,
         );
       }
-      const error = lane.hub?.lastError ?? lane.runtime_status.lastError;
-      if (error && (!compact || index === 0)) {
-        laneLines.push(`  ${paint(RED, `! ${clip(error, frameWidth() - 10)}`)}`);
+      if (!compact) {
+        agentLines.push(
+          `    Key ${agent.hub?.keyStatus ?? "unknown"} · Channels ${agent.channels.length} · Outbox ${paint(outboxColor, `${agent.outbox.pending}/${agent.outbox.retry}/${agent.outbox.deadLetter}`)}`,
+        );
       }
-      if (!compact && index < visibleLanes.length - 1) laneLines.push("");
     }
-    if (lanes.length > visibleLanes.length) {
-      laneLines.push(paint(DIM, `  … ${lanes.length - visibleLanes.length} more lanes`));
+    const hiddenAfter = lanes.length - (start + visibleAgents.length);
+    if (hiddenAfter > 0) {
+      agentLines.push(paint(DIM, `  ↓ ${hiddenAfter} more agents`));
     }
   }
-  writePanel(`Lanes · ${lanes.length}`, laneLines);
+  if (agentLines.length) agentLines.push("");
+  for (let index = lanes.length; index < choices.length; index += 1) {
+    const choice = choices[index]!;
+    agentLines.push(
+      selectableLine(`${index === selectedIndex ? "›" : " "} ${choice.icon} ${choice.label}`, index === selectedIndex),
+    );
+  }
+  writePanel(`Agents · ${lanes.length}`, agentLines);
+  process.stdout.write(
+    `\n${paint(DIM, "↑ ↓  Select    Enter  Open    Esc / Backspace  Back    Ctrl+C  Exit")}\n`,
+  );
+}
+
+function agentActions(agent: DashboardLane): readonly GridChoice<AgentAction>[] {
+  return [
+    { value: "keys", icon: "◆", label: "Identity Key", description: "Approval and fingerprint" },
+    { value: "channels", icon: "#", label: "Channels", description: "Manage channel drivers" },
+    { value: "attach", icon: "⌁", label: "Attach Runtime", description: "Open the CLI session" },
+    {
+      value: "toggle",
+      icon: agent.enabled ? "○" : "●",
+      label: agent.enabled ? "Disable Agent" : "Enable Agent",
+      description: agent.enabled ? "Stop without deleting" : "Start this agent",
+    },
+    { value: "remove", icon: "−", label: "Remove Agent", description: "Keep durable state and outbox" },
+    { value: "back", icon: "←", label: "Back", description: "Return to all agents" },
+  ];
+}
+
+function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
+  heading(`Agent · ${agent.identity}`, `${agent.runtime.toUpperCase()} CLI runtime`);
+  const hubState = agent.hub?.state ?? "not-configured";
+  const runtimeState = agent.runtime_status.state;
+  const statusLines = [
+    `Status     ${paint(agent.enabled ? GREEN : YELLOW, agent.enabled ? "Enabled" : "Disabled")}`,
+    `Hub        ${paint(stateColor(hubState), hubState)}`,
+    `Key        ${paint(stateColor(agent.hub?.keyStatus ?? "unknown"), agent.hub?.keyStatus ?? "unknown")}`,
+    `Runtime    ${paint(stateColor(runtimeState), runtimeState)}`,
+    `Channels   ${agent.channels.length ? agent.channels.map((item) => `${item.id}:${item.status.state}`).join(", ") : "none"}`,
+    `Outbox     ${agent.outbox.pending}/${agent.outbox.retry}/${agent.outbox.deadLetter}`,
+  ];
+  const error = agent.hub?.lastError ?? agent.runtime_status.lastError;
+  if (error) statusLines.push(paint(RED, `! ${clip(error, frameWidth() - 6)}`));
+  writePanel("Agent status", statusLines);
   process.stdout.write("\n");
 
+  const actions = agentActions(agent);
   const columns = dashboardColumns();
+  const compact = (process.stdout.rows ?? 30) < 30;
   const cellWidth = Math.floor((frameWidth() - 5) / columns);
   const actionLines: string[] = [];
-  for (let index = 0; index < DASHBOARD_ACTIONS.length; index += columns) {
-    const row = DASHBOARD_ACTIONS.slice(index, index + columns);
+  for (let index = 0; index < actions.length; index += columns) {
+    const row = actions.slice(index, index + columns);
     actionLines.push(
       row.map((action, offset) => actionCell(action, index + offset === selectedIndex, cellWidth, false)).join("  "),
     );
@@ -583,194 +694,227 @@ function renderDashboard(
       actionLines.push(
         row.map((action, offset) => actionCell(action, index + offset === selectedIndex, cellWidth, true)).join("  "),
       );
-      if (index + columns < DASHBOARD_ACTIONS.length) actionLines.push("");
+      if (index + columns < actions.length) actionLines.push("");
     }
   }
-  writePanel("Actions", actionLines);
+  writePanel("Manage agent", actionLines);
   process.stdout.write(
-    `\n${paint(DIM, "↑ ↓ ← →  Navigate    Tab  Next    Enter  Select    Ctrl+C  Exit")}\n`,
+    `\n${paint(DIM, "↑ ↓ ← →  Navigate    Enter  Select    Esc / Backspace  Back")}\n`,
   );
 }
 
-async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
+async function attachAgentRuntime(reader: Reader, agent: DashboardLane): Promise<void> {
+  if (!agent.runtime_status.tmuxSession) {
+    process.stdout.write("This agent has no attachable runtime session.\n");
+    try {
+      await ask(reader, "Press Enter to go back", undefined, true);
+    } catch (error) {
+      if (!(error instanceof BackNavigation)) throw error;
+    }
+    return;
+  }
+  const tmux = Bun.which("tmux");
+  if (!tmux) throw new Error("tmux is not available in the TUI environment");
+  reader.pause();
+  const child = Bun.spawn(
+    [tmux, "attach-session", "-t", agent.runtime_status.tmuxSession],
+    { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+  );
+  await child.exited;
+  reader.resume();
+}
+
+async function agentDetail(
+  reader: Reader,
+  options: TuiOptions,
+  initial: DashboardLane,
+): Promise<void> {
   let selectedAction = 0;
   while (true) {
-    const [lanes, daemon] = await Promise.all([
-      requestControl(options.runtimeDirectory, "lane.list", {}) as Promise<DashboardLane[]>,
-      probeHostDaemon(options.runtimeDirectory),
-    ]);
-    const selection = await selectGrid(
-      reader,
-      DASHBOARD_ACTIONS,
-      selectedAction,
-      dashboardColumns(),
-      (index) => renderDashboard(lanes, daemon, index),
-    );
+    const agents = await requestControl(
+      options.runtimeDirectory,
+      "lane.list",
+      {},
+    ) as DashboardLane[];
+    const agent = agents.find((item) => item.lane_id === initial.lane_id);
+    if (!agent) return;
+    const actions = agentActions(agent);
+    let selection: { value: AgentAction; index: number };
+    try {
+      selection = await selectGrid(
+        reader,
+        actions,
+        Math.min(selectedAction, actions.length - 1),
+        dashboardColumns(),
+        (index) => renderAgentDetail(agent, index),
+      );
+    } catch (error) {
+      if (error instanceof BackNavigation) return;
+      throw error;
+    }
     selectedAction = selection.index;
-    const action = selection.value;
-    if (action === "quit") return;
-    if (action === "refresh") continue;
-    if (action === "add") {
+    if (selection.value === "back") return;
+    if (selection.value === "keys") {
+      heading(`Identity key · ${agent.identity}`);
+      writePanel("Hub identity", [
+        `Connection    ${agent.hub?.state ?? "not-configured"}`,
+        `Key status    ${agent.hub?.keyStatus ?? "unknown"}`,
+        `Fingerprint   ${agent.hub?.fingerprint ?? "not-generated"}`,
+      ]);
+      try {
+        await ask(reader, "\nPress Enter to go back", undefined, true);
+      } catch (error) {
+        if (!(error instanceof BackNavigation)) throw error;
+      }
+    } else if (selection.value === "channels") {
+      await channelsScreen(reader, options, agent.lane_id);
+    } else if (selection.value === "attach") {
+      await attachAgentRuntime(reader, agent);
+    } else {
       const store = new ConfigStore(options.configFile);
       const config = await store.load();
-      if (!config.hub) throw new Error("Hub must be configured before creating a lane");
-      const endpoints = resolveHubEndpoints(config.hub.base_url, config.hub);
-      config.lanes.push(await createLane(reader, endpoints, config.lanes));
+      const index = config.lanes.findIndex((item) => item.id === agent.lane_id);
+      if (index === -1) return;
+      if (selection.value === "toggle") {
+        config.lanes[index]!.enabled = !config.lanes[index]!.enabled;
+      } else if (selection.value === "remove") {
+        let confirm: string;
+        try {
+          confirm = (
+            await ask(
+              reader,
+              `Remove agent ${agent.identity}? Durable state and outbox will remain (y/N)`,
+              "N",
+              true,
+            )
+          ).toLowerCase();
+        } catch (error) {
+          if (error instanceof BackNavigation) continue;
+          throw error;
+        }
+        if (confirm !== "y") continue;
+        config.lanes.splice(index, 1);
+      }
       await store.save(config);
       await requestControl(options.runtimeDirectory, "config.reload", {});
-    } else if (action === "lanes") {
-      await lanesScreen(reader, options);
-    } else if (action === "send") {
-      const lane = await ask(reader, "From lane", lanes[0]?.lane_id);
-      const to = await ask(reader, "To identity");
-      const content = await ask(reader, "Message");
-      const result = await requestControl(options.runtimeDirectory, "mesh.send", {
-        lane_id: lane,
-        to,
-        content,
-      });
-      process.stdout.write(`\n✓ ${JSON.stringify(result)}\n`);
-      await reader.question("Press Enter");
-    } else if (action === "agents") {
-      const lane = await ask(reader, "Lane", lanes[0]?.lane_id);
-      const result = await requestControl(options.runtimeDirectory, "mesh.list_agents", {
-        lane_id: lane,
-      });
-      process.stdout.write(`\n${JSON.stringify(result, null, 2)}\n`);
-      await reader.question("Press Enter");
-    } else if (action === "hub") {
-      heading("Hub and identity keys");
-      for (const lane of lanes) {
-        process.stdout.write(
-          `${lane.lane_id}\n  connection: ${lane.hub?.state ?? "not-configured"}\n  key status: ${lane.hub?.keyStatus ?? "unknown"}\n  fingerprint: ${(lane.hub as { fingerprint?: string } | null)?.fingerprint ?? "not-generated"}\n\n`,
-        );
-      }
-      await reader.question("Press Enter");
-    } else if (action === "attach") {
-      const lane = await ask(reader, "Lane", lanes[0]?.lane_id);
-      const selected = lanes.find((item) => item.lane_id === lane);
-      if (!selected?.runtime_status.tmuxSession) {
-        process.stdout.write("This runtime has no tmux session.\n");
-        await reader.question("Press Enter");
-      } else {
-        const tmux = Bun.which("tmux");
-        if (!tmux) throw new Error("tmux is not installed");
-        reader.pause();
-        const child = Bun.spawn(
-          [tmux, "attach-session", "-t", selected.runtime_status.tmuxSession],
-          { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
-        );
-        await child.exited;
-        reader.resume();
-      }
-    } else if (action === "channels") {
-      await channelsScreen(reader, options, lanes.map((lane) => lane.lane_id));
-    } else if (action === "inbox") {
-      const lane = await ask(reader, "Lane", lanes[0]?.lane_id);
-      const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
-        lane_id: lane,
-      })) as Array<{
-        turnId: string;
-        sourceKind: string;
-        sourceMessageId: string;
-        content: string;
-        correlation: { from?: unknown };
-        state: string;
-      }>;
-      process.stdout.write("\nInbox\n");
-      turns.forEach((turn, index) => {
-        const from = typeof turn.correlation.from === "string" ? turn.correlation.from : "channel";
-        process.stdout.write(
-          `  ${index + 1}. [${turn.state}] ${from}: ${turn.content.replace(/\s+/g, " ").slice(0, 100)}\n`,
-        );
-      });
-      const selection = await ask(reader, "Reply number (blank to return)");
-      if (selection) {
-        const turn = turns[Number(selection) - 1];
-        const to = turn?.correlation.from;
-        if (!turn || typeof to !== "string") {
-          process.stdout.write("Selected item is not a mesh message.\n");
-        } else {
-          const content = await ask(reader, "Reply");
-          const result = await requestControl(options.runtimeDirectory, "mesh.send", {
-            lane_id: lane,
-            to,
-            content,
-            reply_to: turn.sourceMessageId,
-          });
-          process.stdout.write(`✓ ${JSON.stringify(result)}\n`);
-        }
-        await reader.question("Press Enter");
-      }
+      if (selection.value === "remove") return;
     }
   }
 }
 
-async function lanesScreen(reader: Reader, options: TuiOptions): Promise<void> {
+async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
+  let selectedValue: string | undefined;
   while (true) {
-    const store = new ConfigStore(options.configFile);
-    const config = await store.load();
-    heading("Lanes");
-    for (const lane of config.lanes) {
-      process.stdout.write(
-        `  ${lane.id.padEnd(20)} ${lane.runtime.kind.padEnd(12)} ${lane.enabled ? "enabled" : "disabled"}\n`,
+    const [agents, daemon] = await Promise.all([
+      requestControl(options.runtimeDirectory, "lane.list", {}) as Promise<DashboardLane[]>,
+      probeHostDaemon(options.runtimeDirectory),
+    ]);
+    const choices = overviewChoices(agents);
+    const selectedIndex = Math.max(0, choices.findIndex((item) => item.value === selectedValue));
+    let selection: { value: string; index: number };
+    try {
+      selection = await selectGrid(
+        reader,
+        choices,
+        selectedIndex,
+        1,
+        (index) => renderDashboard(agents, daemon, choices, index),
       );
+    } catch (error) {
+      if (error instanceof BackNavigation) return;
+      throw error;
     }
-    process.stdout.write("\n[e] Enable  [d] Disable  [r] Remove  [b] Back\n");
-    const action = (await reader.question("> ")).trim().toLowerCase();
-    if (action === "b" || !action) return;
-    if (action !== "e" && action !== "d" && action !== "r") continue;
-    const id = await ask(reader, "Lane ID");
-    const index = config.lanes.findIndex((lane) => lane.id === id);
-    if (index === -1) {
-      process.stdout.write("Unknown lane.\n");
-      await reader.question("Press Enter");
+    selectedValue = selection.value;
+    if (selection.value === "quit") return;
+    if (selection.value === "refresh") continue;
+    if (selection.value === "add") {
+      const store = new ConfigStore(options.configFile);
+      const config = await store.load();
+      if (!config.hub) throw new Error("Hub must be configured before adding an agent");
+      const endpoints = resolveHubEndpoints(config.hub.base_url, config.hub);
+      try {
+        config.lanes.push(await createLane(reader, endpoints, config.lanes));
+      } catch (error) {
+        if (error instanceof BackNavigation) continue;
+        throw error;
+      }
+      await store.save(config);
+      await requestControl(options.runtimeDirectory, "config.reload", {});
       continue;
     }
-    if (action === "r") {
-      const confirm = (
-        await ask(reader, `Remove ${id} config? Existing state/outbox stays (y/N)`, "N")
-      ).toLowerCase();
-      if (confirm !== "y") continue;
-      config.lanes.splice(index, 1);
-    } else {
-      config.lanes[index]!.enabled = action === "e";
+    if (selection.value.startsWith("agent:")) {
+      const id = selection.value.slice("agent:".length);
+      const agent = agents.find((item) => item.lane_id === id);
+      if (agent) await agentDetail(reader, options, agent);
     }
-    await store.save(config);
-    await requestControl(options.runtimeDirectory, "config.reload", {});
   }
 }
 
 async function channelsScreen(
   reader: Reader,
   options: TuiOptions,
-  laneIds: string[],
+  agentId: string,
 ): Promise<void> {
-  const laneId = await ask(reader, "Lane", laneIds[0]);
+  type ChannelAction = "add" | "enable" | "disable" | "remove" | "back";
+  const laneId = agentId;
   while (true) {
     const store = new ConfigStore(options.configFile);
     const config = await store.load();
     const lane = config.lanes.find((item) => item.id === laneId);
-    if (!lane) throw new Error(`Unknown lane: ${laneId}`);
-    heading(`Channels · ${laneId}`);
+    if (!lane) throw new Error(`Unknown agent: ${laneId}`);
+    heading(`Channels · ${lane.identity}`);
     if (!lane.channels.length) process.stdout.write("No channel drivers configured.\n");
     for (const channel of lane.channels) {
       process.stdout.write(
         `  ${channel.id.padEnd(24)} ${channel.provider.padEnd(12)} ${channel.enabled ? "enabled" : "disabled"}\n`,
       );
     }
-    process.stdout.write("\n[a] Add Discord  [e] Enable  [d] Disable  [r] Remove  [b] Back\n");
-    const action = (await reader.question("> ")).trim().toLowerCase();
-    if (action === "b" || !action) return;
-    if (action === "a") {
-      const id = await ask(reader, "Driver instance ID", `discord-${laneId}`);
-      const accountRef = await ask(reader, "Bot account reference", "discord-bot");
-      const token = await askSecret(reader, "Discord bot token (hidden)");
-      const allowed = (await ask(reader, "Allowed channel IDs (comma-separated, blank=all)"))
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const mentionOnly = (await ask(reader, "Require bot mention? (y/N)", "N")).toLowerCase() === "y";
+    process.stdout.write(`\n${paint(DIM, "Esc / Backspace  Back")}\n\n`);
+    const actionChoices: HorizontalChoice<ChannelAction>[] = [
+      { value: "add", label: "Add Discord" },
+      ...(lane.channels.some((channel) => !channel.enabled)
+        ? [{ value: "enable" as const, label: "Enable" }]
+        : []),
+      ...(lane.channels.some((channel) => channel.enabled)
+        ? [{ value: "disable" as const, label: "Disable" }]
+        : []),
+      ...(lane.channels.length ? [{ value: "remove" as const, label: "Remove" }] : []),
+      { value: "back", label: "Back" },
+    ];
+    let action: ChannelAction;
+    try {
+      action = await selectHorizontal(reader, "Channel Action", actionChoices);
+    } catch (error) {
+      if (error instanceof BackNavigation) return;
+      throw error;
+    }
+    if (action === "back") return;
+    if (action === "add") {
+      let id: string;
+      let accountRef: string;
+      let token: string;
+      let allowed: string[];
+      let mentionOnly: boolean;
+      try {
+        id = await ask(reader, "Driver instance ID", `discord-${laneId}`, true);
+        accountRef = await ask(reader, "Bot account reference", "discord-bot", true);
+        token = await askSecret(reader, "Discord bot token (hidden)", true);
+        allowed = (await ask(
+          reader,
+          "Allowed channel IDs (comma-separated, blank=all)",
+          undefined,
+          true,
+        ))
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+        mentionOnly = (
+          await ask(reader, "Require bot mention? (y/N)", "N", true)
+        ).toLowerCase() === "y";
+      } catch (error) {
+        if (error instanceof BackNavigation) continue;
+        throw error;
+      }
       const secretRef = `channel-${id}.token`;
       await new SecretStore(options.secretDirectory).set(secretRef, token);
       lane.channels.push({
@@ -788,16 +932,27 @@ async function channelsScreen(
       await requestControl(options.runtimeDirectory, "config.reload", {});
       continue;
     }
-    const id = await ask(reader, "Driver instance ID");
-    const index = lane.channels.findIndex((item) => item.id === id);
-    if (index === -1) {
-      process.stdout.write("Unknown channel driver.\n");
-      await reader.question("Press Enter");
-      continue;
+    const candidates = action === "enable"
+      ? lane.channels.filter((channel) => !channel.enabled)
+      : action === "disable"
+        ? lane.channels.filter((channel) => channel.enabled)
+        : lane.channels;
+    let id: string;
+    try {
+      id = await selectHorizontal(
+        reader,
+        "Channel",
+        candidates.map((channel) => ({ value: channel.id, label: channel.id })),
+      );
+    } catch (error) {
+      if (error instanceof BackNavigation) continue;
+      throw error;
     }
-    if (action === "e" || action === "d") {
-      lane.channels[index]!.enabled = action === "e";
-    } else if (action === "r") {
+    const index = lane.channels.findIndex((item) => item.id === id);
+    if (index === -1) throw new Error(`Selected channel disappeared: ${id}`);
+    if (action === "enable" || action === "disable") {
+      lane.channels[index]!.enabled = action === "enable";
+    } else if (action === "remove") {
       const [removed] = lane.channels.splice(index, 1);
       if (removed) {
         config.retired_channel_ids ??= [];
@@ -805,13 +960,19 @@ async function channelsScreen(
           config.retired_channel_ids.push(removed.id);
         }
       }
-      const removeSecret = (
-        await ask(reader, "Also delete the stored provider token? (y/N)", "N")
-      ).toLowerCase();
+      let removeSecret: string;
+      try {
+        removeSecret = (
+          await ask(reader, "Also delete the stored provider token? (y/N)", "N", true)
+        ).toLowerCase();
+      } catch (error) {
+        if (error instanceof BackNavigation) continue;
+        throw error;
+      }
       if (removeSecret === "y" && removed) {
         await new SecretStore(options.secretDirectory).remove(removed.secret_ref);
       }
-    } else continue;
+    }
     await store.save(config);
     await requestControl(options.runtimeDirectory, "config.reload", {});
   }

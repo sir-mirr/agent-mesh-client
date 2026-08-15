@@ -13,18 +13,22 @@
 5. lane별 보안 정책 선택 및 영향 확인
 6. 선택 Channel Driver와 credential 설정
 7. 생성·변경될 config, secret, service, tmux와 MCP 파일 검토
-8. daemon user service 설치/기동, lane/key 등록, driver/runtime 준비
-9. health check와 필요한 대화형 runtime attach
+8. daemon user service 설치/기동 후 Agent가 없으면 빈 Overview와 `+ Add Agent` 표시
+9. 사용자가 `+ Add Agent`를 선택하면 identity/key 등록, driver/runtime 준비와 health check 수행
 
 Antigravity one-shot lane은 tmux를 필수 dependency로 판정하지 않는다. Claude/Codex 대화형 session을 선택한 경우에만 tmux를 요구한다.
 
 ## 운영 화면 필수 상태
 
-Overview는 색상·카드 기반 전체 화면으로 렌더링하고, Action grid는 `↑↓←→` 또는 Tab으로 이동해 Enter로 실행한다. 문자 단축키를 외우지 않아도 모든 주요 기능에 접근할 수 있어야 하며, 화면 갱신 뒤에도 선택 위치를 유지한다. 터미널 높이와 폭에 따라 설명을 접거나 Action grid를 1열로 전환한다.
+Overview는 색상·카드 기반 전체 화면으로 렌더링하고 등록된 Agent 전체와 상태를 선택 목록으로 보여준다. `↑↓`로 Agent를 골라 Enter를 누르면 해당 Agent의 Identity Key, Channels, Attach Runtime, 활성화와 삭제 작업으로 들어간다. `+ Add Agent`, Refresh, Quit는 목록 아래에 둔다. 사람에게 보이는 TUI에는 내부 구현 용어인 Lane을 표시하지 않으며, 수동 send/inbox는 진단용 CLI에만 둔다.
+
+등록된 Agent가 없어도 등록 wizard를 강제로 열지 않는다. `Agents · 0`, `No agents registered.`와 선택 가능한 `+ Add Agent`를 먼저 보여주고, 사용자가 Enter를 눌렀을 때만 wizard를 시작한다.
+
+모든 하위 화면과 wizard는 Esc 또는 입력값이 비어 있을 때 Backspace로 이전 화면에 돌아간다. Channel Driver가 없으면 Add와 Back만 표시하며, enable/disable/remove는 적용 가능한 Driver가 있을 때만 표시하고 대상을 키보드로 선택한다.
 
 - daemon user service와 restart 상태
 - Hub endpoint/connection/protocol
-- lane identity와 key approval/fingerprint
+- agent identity와 key approval/fingerprint
 - runtime kind, Idle/Running/Stopped/Failed, queue와 deadline
 - channel driver instance, capability와 drain 상태
 - outbox pending/retry/dead-letter 수, bytes와 마지막 ACK/error

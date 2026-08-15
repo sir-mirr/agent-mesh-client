@@ -12,6 +12,7 @@
 | `OPS-001` | MUST | Linux는 systemd user, macOS는 launchd user service로 daemon을 관리해야 한다. |
 | `OPS-002` | MUST | TUI/terminal/tmux 종료가 daemon을 종료하면 안 된다. |
 | `OPS-003` | MUST | channel driver instance를 lane 재시작 없이 hot add/disable/enable/remove할 수 있어야 한다. |
+| `OPS-004` | MUST | user service는 user-local, Homebrew/Linuxbrew와 설치 시 발견한 Runtime CLI 경로를 포함하는 명시적 PATH로 기동해야 한다. |
 | `CHAN-001` | MUST | Channel RPC는 lane UDS의 JSON-RPC 2.0 over NDJSON이어야 한다. |
 | `CHAN-002` | MUST | JSON payload frame은 최대 10 MiB이며 첨부 bytes를 포함하면 안 된다. |
 | `CHAN-003` | MUST | inbound 성공 ACK는 메시지와 첨부가 durable local storage에 기록된 뒤에만 반환해야 한다. |
@@ -34,5 +35,8 @@
 | `SEC-003` | MUST | 신규 lane은 Mesh 전체 identity 중복을 사전 조회하고 원자적 create-only 등록을 사용해 기존·삭제 identity와 key를 변경하면 안 된다. |
 | `UX-001` | MUST | YAML, UDS와 내부 port를 직접 편집하지 않고 첫 lane을 실행할 수 있어야 한다. |
 | `UX-002` | MUST | 모든 필수 TUI 작업에 non-interactive CLI가 있어야 한다. |
+| `UX-003` | MUST | 사람에게 보이는 TUI는 Agent를 최상위 관리 대상으로 사용하고 내부 Lane 용어를 노출하지 않아야 한다. |
+| `UX-004` | MUST | TUI 하위 화면과 wizard는 Esc 또는 빈 입력 상태의 Backspace로 상위 화면에 돌아가야 한다. |
+| `UX-005` | MUST | TUI는 존재하는 Agent/Channel만 선택하게 하고 대상이 없으면 enable/disable/remove 같은 적용 불가능한 action을 숨겨야 한다. |
 | `DIST-001` | MUST | 최종 사용자는 Bun/Node/npm 없이 standalone binary를 설치할 수 있어야 한다. |
 | `CON-001` | MUST | Hub contract를 immutable public Git tag로 고정해야 한다. |

@@ -1,6 +1,6 @@
 # Agent Mesh Client
 
-여러 Agent CLI와 외부 채널을 하나의 로컬 데몬으로 Agent Mesh Hub에 연결합니다. 최종 사용자는 Bun·Node.js·npm 없이 standalone `agent-mesh` 바이너리 하나를 설치하고, TUI에서 Hub·lane·runtime·channel을 설정할 수 있습니다.
+여러 Agent CLI와 외부 채널을 하나의 로컬 데몬으로 Agent Mesh Hub에 연결합니다. 최종 사용자는 Bun·Node.js·npm 없이 standalone `agent-mesh` 바이너리 하나를 설치하고, TUI에서 Hub·Agent·runtime·channel을 설정할 수 있습니다.
 
 현재 `v0.1.0-dev` 구현에는 다음이 포함됩니다.
 
@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/ins
 agent-mesh
 ```
 
-`install.sh`는 OS/CPU에 맞는 GitHub Release archive와 `SHA256SUMS`를 내려받아 검증한 뒤 기본적으로 `~/.local/bin/agent-mesh`에 설치하고, launchd 또는 systemd 사용자 서비스를 즉시 등록·기동합니다. 서비스 등록을 생략해야 하는 컨테이너 환경에서는 `AGENT_MESH_INSTALL_SERVICE=0`을 지정할 수 있습니다. Agent CLI는 사용할 runtime만 별도로 준비합니다.
+`install.sh`는 OS/CPU에 맞는 GitHub Release archive와 `SHA256SUMS`를 내려받아 검증한 뒤 기본적으로 `~/.local/bin/agent-mesh`에 설치하고, launchd 또는 systemd 사용자 서비스를 즉시 등록·기동합니다. 서비스 PATH에는 user-local, Homebrew/Linuxbrew와 설치 시 발견한 Runtime CLI 위치가 명시적으로 기록됩니다. 서비스 등록을 생략해야 하는 컨테이너 환경에서는 `AGENT_MESH_INSTALL_SERVICE=0`을 지정할 수 있습니다. Agent CLI는 사용할 runtime만 별도로 준비합니다.
 
 | Runtime | 필요한 외부 도구 | 연결 방식 |
 |---|---|---|
@@ -36,7 +36,7 @@ agent-mesh
 agent-mesh
 ```
 
-TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 받습니다. Identity는 저장 전에 Hub 전체 registry에서 중복을 조회하며 Hub에 연결할 수 없거나 조회 응답이 불명확하면 fail-closed합니다. 로컬 Lane ID는 Identity에서 자동 생성되며 Hub identity로 사용되지 않습니다. 설치 시 등록된 단일 데몬은 설정 변경을 감지하며, Claude lane은 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
+TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 받습니다. Identity는 저장 전에 Hub 전체 registry에서 중복을 조회하며 Hub에 연결할 수 없거나 조회 응답이 불명확하면 fail-closed합니다. 내부 Lane ID는 Identity에서 자동 생성되지만 사람에게 보이는 TUI에서는 Agent로 일관되게 표시합니다. 설치 시 등록된 단일 데몬은 설정 변경을 감지하며, Claude Agent는 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
 
 ```sh
 agent-mesh attach <lane-id>

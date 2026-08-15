@@ -10,6 +10,37 @@ export interface UserServiceOptions {
 }
 
 const LABEL = "com.sirmirr.agent-mesh";
+const RUNTIME_COMMANDS = ["tmux", "claude", "codex", "agy", "bun", "node"] as const;
+
+export function buildServiceEnvironmentPath(
+  home: string,
+  platform: NodeJS.Platform,
+  discoveredDirectories: readonly string[] = [],
+): string {
+  const candidates = [
+    resolve(home, ".local", "bin"),
+    resolve(home, ".bun", "bin"),
+    ...(platform === "darwin"
+      ? ["/opt/homebrew/bin", "/opt/homebrew/sbin"]
+      : [resolve(home, ".linuxbrew", "bin"), "/home/linuxbrew/.linuxbrew/bin"]),
+    ...discoveredDirectories,
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+  ];
+  return [...new Set(candidates.filter((item) => item && item !== "."))].join(":");
+}
+
+function serviceEnvironmentPath(): string {
+  const discoveredDirectories = RUNTIME_COMMANDS
+    .map((name) => Bun.which(name))
+    .filter((path): path is string => typeof path === "string")
+    .map(dirname);
+  return buildServiceEnvironmentPath(homedir(), process.platform, discoveredDirectories);
+}
 
 function command(options: UserServiceOptions): string[] {
   const isBun = /bun(?:\.exe)?$/.test(process.execPath);
@@ -74,6 +105,7 @@ export async function installUserService(options: UserServiceOptions): Promise<u
   const path = servicePath();
   if (process.platform === "darwin") {
     const argumentsXml = argv.map((argument) => `      <string>${xml(argument)}</string>`).join("\n");
+    const environmentPath = serviceEnvironmentPath();
     await atomicWrite(
       path,
       `<?xml version="1.0" encoding="UTF-8"?>
@@ -85,6 +117,10 @@ export async function installUserService(options: UserServiceOptions): Promise<u
   <array>
 ${argumentsXml}
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>${xml(environmentPath)}</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Background</string>
@@ -110,6 +146,7 @@ ${argumentsXml}
   }
 
   const exec = argv.map(systemdEscape).join(" ");
+  const environmentPath = serviceEnvironmentPath();
   await atomicWrite(
     path,
     `[Unit]
@@ -123,6 +160,7 @@ ExecStart=${exec}
 Restart=on-failure
 RestartSec=3
 UMask=0077
+Environment=${systemdEscape(`PATH=${environmentPath}`)}
 
 [Install]
 WantedBy=default.target
@@ -201,23 +239,10 @@ export async function restartUserService(options: UserServiceOptions): Promise<u
   const status = await userServiceStatus() as { installed: boolean };
   if (!status.installed) return await installUserService(options);
   if (process.platform === "darwin") {
-    const domain = `gui/${process.getuid?.() ?? 0}`;
-    const target = `${domain}/${LABEL}`;
-    let result = Bun.spawnSync(["launchctl", "kickstart", "-k", target], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    if (result.exitCode !== 0) {
-      result = Bun.spawnSync(["launchctl", "bootstrap", domain, servicePath()], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-    }
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr.toString("utf8").trim() || "launchctl restart failed");
-    }
+    await installUserService(options);
     return { restarted: true, manager: "launchd", path: servicePath() };
   }
+  await installUserService(options);
   const result = Bun.spawnSync(
     ["systemctl", "--user", "restart", "agent-mesh.service"],
     { stdout: "pipe", stderr: "pipe" },

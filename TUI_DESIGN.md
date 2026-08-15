@@ -91,7 +91,7 @@ Agent Mesh TUI
 └── Global Settings
 ```
 
-1차 버전은 복잡한 tab 구조보다 `Overview → Lane Detail` 계층을 우선한다.
+1차 버전은 복잡한 tab 구조보다 `Overview → Agent Detail` 계층을 우선한다.
 
 ## 6. 공통 화면
 
@@ -109,6 +109,7 @@ Agent Mesh TUI
 - Main: 목록, 상세, wizard 또는 로그
 - Footer: 현재 동작 키
 - Overlay: 확인, secret 입력, 오류 상세, 도움말
+- Esc 또는 빈 입력 상태의 Backspace는 이전 화면으로 이동한다. 대상이 없는 action은 disabled로 남기지 않고 숨긴다.
 
 ## 7. 상태 표현
 
@@ -327,52 +328,45 @@ OAuth가 필요하면 일반 form 안에서 credential을 받지 않고 임시 P
  Local control plane · live status
 
  ╭─ Host ───────────────────────────────────────────────────────╮
- │ ● Daemon running   PID 12031 · Lanes 3 · Drivers 2           │
+ │ ● Daemon running   PID 12031 · Agents 3 · Drivers 2          │
  ╰──────────────────────────────────────────────────────────────╯
 
- ╭─ Lanes · 3 ──────────────────────────────────────────────────╮
- │ ● agent-a  CLAUDE                                            │
- │   Hub connected · Runtime running · Outbox 0/0/0             │
- │   Channels discord-main:running                              │
+ ╭─ Agents · 3 ─────────────────────────────────────────────────╮
+ │ › ● agent-a  CLAUDE · Hub connected · Runtime running        │
+ │     Key approved · Channels 1 · Outbox 0/0/0                 │
+ │   ● agent-b  CODEX · Hub approval · Runtime idle             │
+ │                                                              │
+ │   + Add Agent                                                │
+ │   ↻ Refresh                                                  │
+ │   × Quit                                                     │
  ╰──────────────────────────────────────────────────────────────╯
 
- ╭─ Actions ────────────────────────────────────────────────────╮
- │ › ↻ Refresh                  + Add lane                       │
- │   Reload live status          Create an agent identity       │
- │   ≡ Lanes                     ↑ Send message                  │
- │   ↓ Inbox / Reply             ◇ Mesh agents                   │
- ╰──────────────────────────────────────────────────────────────╯
-
- ↑ ↓ ← → Navigate    Tab Next    Enter Select    Ctrl+C Exit
+ ↑ ↓ Select agent or command    Enter Open    Ctrl+C Exit
 ```
 
-Overview는 문자 단축키를 요구하지 않는다. 2열 Action grid를 방향키로 이동하고 Enter로 실행하며, 선택 항목은 색상 배경으로 강조한다. 갱신하거나 하위 화면에서 돌아와도 선택 위치를 유지한다. Host, lane, Hub/runtime, outbox와 channel 상태는 색상과 카드 경계로 구분한다. 낮은 터미널에서는 설명과 부가 상태를 접는 compact layout으로 자동 전환하고, 좁은 터미널에서는 Action grid를 1열로 바꾼다.
+Overview는 로컬에 등록된 모든 Agent와 상태를 최상위 선택 목록으로 보여준다. 방향키로 Agent를 선택하고 Enter를 누르면 해당 Agent의 key, channel, runtime attach, 활성화와 삭제 작업으로 들어간다. `+ Add Agent`, Refresh와 Quit만 Agent 목록 아래에 둔다. 수동 send/inbox는 Runtime Adapter의 책임과 겹치므로 운영 TUI에 노출하지 않고 진단용 CLI에만 유지한다. 사람에게 보이는 화면에서는 내부 구현 용어인 Lane을 사용하지 않는다. 목록이 화면보다 길면 선택 위치를 따라 viewport가 이동한다.
 
-## 10. Lane 상세
+Agent가 0개인 첫 실행도 같은 Overview를 사용한다. `No agents registered.`를 표시하고 `+ Add Agent`를 기본 선택하며, 자동으로 등록 wizard에 진입하지 않는다.
+
+## 10. Agent 상세
 
 ```text
- Lane: agent-a                                    ● Running
+ ◆ AGENT MESH · Agent · agent-a
 
- Runtime
-   Claude CLI       ● Running      tmux mesh-agent-a:agent
-   Runtime Adapter  ● Healthy      PID 12031
-   Hub              ● Connected    ACK 4s ago
+ ╭─ Agent status ────────────────────────────────────────────────╮
+ │ Status     Enabled                                           │
+ │ Hub        Connected                                         │
+ │ Key        Approved                                          │
+ │ Runtime    Running                                           │
+ │ Channels   discord-main:running                              │
+ │ Outbox     0/0/0                                             │
+ ╰──────────────────────────────────────────────────────────────╯
 
- Identity
-   agent-a           ● Approved     SHA256:7b:2e:...:91
-
- Channels
- ┌──────────────────────────────────────────────────────────────┐
- │ discord-main   Discord   ● Connected   mesh-bot             │
- │ discord-alert  Discord   ○ Disabled    alert-bot            │
- └──────────────────────────────────────────────────────────────┘
-
- Audit Outbox
-   Pending 0   Dead-letter 0   Disk 12 MiB
-
- [a] Add channel   [Enter] Channel detail   [Space] Enable/Disable
- [x] Remove        [t] Attach agent          [l] Logs
- [o] Outbox        [e] Edit lane             [Esc] Back
+ ╭─ Manage agent ────────────────────────────────────────────────╮
+ │ › ◆ Identity Key               # Channels                    │
+ │   ⌁ Attach Runtime              ○ Disable Agent               │
+ │   − Remove Agent                ← Back                        │
+ ╰──────────────────────────────────────────────────────────────╯
 ```
 
 Hub가 끊기거나 key 승인을 기다려도 channel과 runtime이 정상일 수 있으므로 상태를 각각 표시한다.

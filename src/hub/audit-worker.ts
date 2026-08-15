@@ -3,6 +3,7 @@ import {
   ERROR_CLASS,
   MESH_ERROR,
   deriveBlobKey,
+  type ErrorClass,
   type AuditAttachmentRef,
   type PrepareBlobsResult,
 } from "@agent-mesh/contracts";
@@ -10,6 +11,15 @@ import type { IdentityKeyManager } from "../identity/key-manager";
 import type { LaneOutbox } from "../outbox/lane-outbox";
 import type { StoredAuditEvent } from "../outbox/types";
 import { HubRpcError, type MeshClient } from "./mesh-client";
+
+// Hub d8f1d9d introduced this permanent catch-all after contracts v0.7.0 was
+// tagged. Keep the compatibility value local until the next immutable
+// contracts tag exposes it as MESH_ERROR.AUDIT_APPEND_FAILED.
+const AUDIT_APPEND_FAILED = -32000;
+
+export function classifyAuditRpcError(code: number): ErrorClass {
+  return ERROR_CLASS[code] ?? (code === AUDIT_APPEND_FAILED ? "permanent" : "transient");
+}
 
 interface RawAttachment {
   filename: string;
@@ -132,7 +142,7 @@ export class AuditWorker {
       const rpcError = error instanceof HubRpcError ? error : null;
       const httpError = error instanceof AuditHttpError ? error : null;
       const classification = rpcError
-        ? ERROR_CLASS[rpcError.code]
+        ? classifyAuditRpcError(rpcError.code)
         : httpError?.permanent
           ? "permanent"
           : "transient";
