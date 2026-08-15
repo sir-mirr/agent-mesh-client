@@ -43,4 +43,12 @@ tar -xzf "$TEMP_DIRECTORY/$ARCHIVE" -C "$TEMP_DIRECTORY"
 install -m 0755 "$TEMP_DIRECTORY/agent-mesh" "$INSTALL_DIRECTORY/agent-mesh"
 
 printf '%s\n' "Installed $INSTALL_DIRECTORY/agent-mesh"
+if [ "${AGENT_MESH_INSTALL_SERVICE:-1}" != "0" ]; then
+  if "$INSTALL_DIRECTORY/agent-mesh" service install; then
+    printf '%s\n' "Installed and started the Agent Mesh user service"
+  else
+    printf '%s\n' "Warning: binary installed, but user service setup failed" >&2
+    printf '%s\n' "Retry: $INSTALL_DIRECTORY/agent-mesh service install" >&2
+  fi
+fi
 printf '%s\n' "Run: $INSTALL_DIRECTORY/agent-mesh"

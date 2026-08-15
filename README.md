@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/ins
 agent-mesh
 ```
 
-`install.sh`는 OS/CPU에 맞는 GitHub Release archive와 `SHA256SUMS`를 내려받아 검증한 뒤 기본적으로 `~/.local/bin/agent-mesh`에 설치합니다. Agent CLI는 사용할 runtime만 별도로 준비합니다.
+`install.sh`는 OS/CPU에 맞는 GitHub Release archive와 `SHA256SUMS`를 내려받아 검증한 뒤 기본적으로 `~/.local/bin/agent-mesh`에 설치하고, launchd 또는 systemd 사용자 서비스를 즉시 등록·기동합니다. 서비스 등록을 생략해야 하는 컨테이너 환경에서는 `AGENT_MESH_INSTALL_SERVICE=0`을 지정할 수 있습니다. Agent CLI는 사용할 runtime만 별도로 준비합니다.
 
 | Runtime | 필요한 외부 도구 | 연결 방식 |
 |---|---|---|
@@ -36,7 +36,7 @@ agent-mesh
 agent-mesh
 ```
 
-TUI가 Hub URL, lane ID/identity, runtime, workspace와 보안 profile을 받습니다. 릴리스 바이너리는 launchd 또는 systemd 사용자 서비스로 단일 데몬을 설치하고, Claude lane은 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
+TUI가 Hub URL, lane ID/identity, runtime, workspace와 보안 profile을 받습니다. 설치 시 등록된 단일 데몬은 설정 변경을 감지하며, Claude lane은 tmux 세션까지 생성합니다. Claude 최초 실행의 workspace 신뢰와 development channel 확인은 다음 명령으로 세션에 붙어 사용자가 직접 승인합니다.
 
 ```sh
 agent-mesh attach <lane-id>
