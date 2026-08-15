@@ -1,0 +1,17 @@
+{
+  "description": "Check the local Agent Mesh Mailer whenever the main Codex turn stops.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"/Users/lyong/work/ai/agent-mesh-client/.codex/hooks/agent_mailer_stop.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking platform-claude mailbox"
+          }
+        ]
+      }
+    ]
+  }
+}

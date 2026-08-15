@@ -1,0 +1,31 @@
+{
+  "env": {
+    "AGENT_MESH_AGENT_ID": "client-claude"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PROJECT_DIR}/.claude/hooks/mailbox.ts\"",
+            "timeout": 10,
+            "statusMessage": "Checking agent mailbox"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PROJECT_DIR}/.claude/hooks/mailbox.ts\"",
+            "timeout": 10,
+            "statusMessage": "Checking agent mailbox"
+          }
+        ]
+      }
+    ]
+  }
+}
