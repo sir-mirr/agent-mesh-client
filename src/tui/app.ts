@@ -23,13 +23,67 @@ export interface TuiOptions {
 
 type Reader = ReturnType<typeof createInterface>;
 
+const RESET = "\u001b[0m";
+const BOLD = "\u001b[1m";
+const DIM = "\u001b[2m";
+const CYAN = "\u001b[96m";
+const GREEN = "\u001b[92m";
+const YELLOW = "\u001b[93m";
+const RED = "\u001b[91m";
+const SELECTED = "\u001b[1;97;48;5;24m";
+const ANSI_RE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+
+function paint(code: string, value: string): string {
+  if (process.env.NO_COLOR !== undefined) return value;
+  return `${code}${value}${RESET}`;
+}
+
+function visibleLength(value: string): number {
+  return value.replace(ANSI_RE, "").length;
+}
+
+function padVisible(value: string, width: number): string {
+  return `${value}${" ".repeat(Math.max(0, width - visibleLength(value)))}`;
+}
+
+function clip(value: string, width: number): string {
+  if (value.length <= width) return value;
+  return width <= 1 ? value.slice(0, width) : `${value.slice(0, width - 1)}…`;
+}
+
+function frameWidth(): number {
+  return Math.max(40, Math.min(100, (process.stdout.columns ?? 82) - 2));
+}
+
+function dashboardColumns(): number {
+  return frameWidth() >= 64 ? 2 : 1;
+}
+
 function clear(): void {
   process.stdout.write("\u001b[2J\u001b[H");
 }
 
-function heading(title: string): void {
+function heading(title: string, subtitle?: string): void {
   clear();
-  process.stdout.write(`Agent Mesh · ${title}\n${"─".repeat(64)}\n\n`);
+  const width = frameWidth();
+  process.stdout.write(
+    `${paint(`${BOLD}${CYAN}`, "◆ AGENT MESH")} ${paint(DIM, `· ${title}`)}\n`,
+  );
+  if (subtitle) process.stdout.write(`${paint(DIM, subtitle)}\n`);
+  process.stdout.write(`${paint(DIM, "─".repeat(width))}\n\n`);
+}
+
+function writePanel(title: string, lines: readonly string[]): void {
+  const width = frameWidth();
+  const innerWidth = width - 2;
+  const topFill = "─".repeat(Math.max(1, width - title.length - 5));
+  process.stdout.write(`${paint(CYAN, `╭─ ${title} ${topFill}╮`)}\n`);
+  for (const line of lines) {
+    process.stdout.write(
+      `${paint(CYAN, "│")}${padVisible(` ${line}`, innerWidth)}${paint(CYAN, "│")}\n`,
+    );
+  }
+  process.stdout.write(`${paint(CYAN, `╰${"─".repeat(width - 2)}╯`)}\n`);
 }
 
 async function ask(reader: Reader, prompt: string, fallback?: string): Promise<string> {
@@ -46,6 +100,93 @@ interface HorizontalChoice<T extends string> {
 export function moveSelection(index: number, count: number, delta: number): number {
   if (count <= 0) throw new Error("Selection requires at least one choice");
   return (index + delta + count) % count;
+}
+
+export type GridDirection = "up" | "down" | "left" | "right";
+
+export function moveGridSelection(
+  index: number,
+  count: number,
+  columns: number,
+  direction: GridDirection,
+): number {
+  if (count <= 0 || columns <= 0) throw new Error("Grid requires choices and columns");
+  if (direction === "left") return moveSelection(index, count, -1);
+  if (direction === "right") return moveSelection(index, count, 1);
+  if (direction === "up") {
+    if (index - columns >= 0) return index - columns;
+    let candidate = index;
+    while (candidate + columns < count) candidate += columns;
+    return candidate;
+  }
+  if (index + columns < count) return index + columns;
+  return index % columns;
+}
+
+interface GridChoice<T extends string> {
+  value: T;
+  label: string;
+  description: string;
+  icon: string;
+}
+
+async function selectGrid<T extends string>(
+  reader: Reader,
+  choices: readonly GridChoice<T>[],
+  initialIndex: number,
+  columns: number,
+  render: (selectedIndex: number) => void,
+): Promise<{ value: T; index: number }> {
+  if (!choices[initialIndex]) throw new Error("Grid has no initial choice");
+  const stdin = process.stdin;
+  if (!stdin.isTTY || !process.stdout.isTTY || typeof stdin.setRawMode !== "function") {
+    throw new Error("Grid selection requires an interactive terminal");
+  }
+
+  reader.pause();
+  const previousRawMode = stdin.isRaw;
+  emitKeypressEvents(stdin);
+  stdin.setRawMode(true);
+  stdin.resume();
+  let selected = initialIndex;
+
+  return await new Promise<{ value: T; index: number }>((resolveChoice, reject) => {
+    const cleanup = () => {
+      stdin.off("keypress", onKeypress);
+      stdin.setRawMode(previousRawMode);
+      reader.resume();
+    };
+    const onKeypress = (
+      _input: string | undefined,
+      key: { name?: string; ctrl?: boolean },
+    ) => {
+      if (key.ctrl && key.name === "c") {
+        cleanup();
+        process.stdout.write("\n");
+        reject(new Error("Selection cancelled"));
+        return;
+      }
+      if (key.name === "return" || key.name === "enter") {
+        const choice = choices[selected]!;
+        cleanup();
+        resolveChoice({ value: choice.value, index: selected });
+        return;
+      }
+      const direction =
+        key.name === "up" || key.name === "down" ||
+          key.name === "left" || key.name === "right"
+          ? key.name
+          : null;
+      if (direction) {
+        selected = moveGridSelection(selected, choices.length, columns, direction);
+      } else if (key.name === "tab") {
+        selected = moveGridSelection(selected, choices.length, columns, "right");
+      } else return;
+      render(selected);
+    };
+    stdin.on("keypress", onKeypress);
+    render(selected);
+  });
 }
 
 async function selectHorizontal<T extends string>(
@@ -310,42 +451,166 @@ async function startDaemon(options: TuiOptions): Promise<void> {
   throw new Error("Daemon did not become ready within 8 seconds");
 }
 
-async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
-  while (true) {
-    const lanes = (await requestControl(options.runtimeDirectory, "lane.list", {})) as Array<{
-      lane_id: string;
-      runtime: string;
-      hub: { state: string; keyStatus: string | null; lastError: string | null } | null;
-      runtime_status: { state: string; tmuxSession?: string; lastError?: string | null };
-      outbox: { pending: number; retry: number; deadLetter: number; warning: boolean };
-      channels: Array<{
-        id: string;
-        provider: string;
-        enabled: boolean;
-        status: { state: string; lastError?: string | null };
-      }>;
-    }>;
-    heading("Overview");
-    process.stdout.write("Daemon  ● Running\n\nLanes\n");
-    for (const lane of lanes) {
-      const hub = lane.hub?.state ?? "not-configured";
-      process.stdout.write(
-        `  ${lane.lane_id.padEnd(18)} ${lane.runtime.padEnd(12)} Hub ${hub.padEnd(10)} Outbox ${lane.outbox.pending}/${lane.outbox.retry}/${lane.outbox.deadLetter}\n`,
-      );
-      process.stdout.write(
-        `    Runtime ${lane.runtime_status.state} · Channels ${lane.channels.length ? lane.channels.map((item) => `${item.id}:${item.status.state}`).join(", ") : "none"}\n`,
-      );
-      if (lane.hub?.lastError) process.stdout.write(`    ! ${lane.hub.lastError}\n`);
-      if (lane.runtime_status.lastError) {
-        process.stdout.write(`    ! ${lane.runtime_status.lastError}\n`);
-      }
-    }
-    process.stdout.write(
-      "\n[r] Refresh  [a] Add lane  [l] Lanes  [m] Send  [i] Inbox/reply  [g] Agents\n[c] Channels  [t] Attach runtime  [h] Hub/keys  [q] Quit\n",
+interface DashboardLane {
+  lane_id: string;
+  runtime: string;
+  hub: { state: string; keyStatus: string | null; lastError: string | null } | null;
+  runtime_status: { state: string; tmuxSession?: string; lastError?: string | null };
+  outbox: { pending: number; retry: number; deadLetter: number; warning: boolean };
+  channels: Array<{
+    id: string;
+    provider: string;
+    enabled: boolean;
+    status: { state: string; lastError?: string | null };
+  }>;
+}
+
+type DashboardAction =
+  | "refresh"
+  | "add"
+  | "lanes"
+  | "send"
+  | "inbox"
+  | "agents"
+  | "channels"
+  | "attach"
+  | "hub"
+  | "quit";
+
+const DASHBOARD_ACTIONS: readonly GridChoice<DashboardAction>[] = [
+  { value: "refresh", icon: "↻", label: "Refresh", description: "Reload live status" },
+  { value: "add", icon: "+", label: "Add lane", description: "Create an agent identity" },
+  { value: "lanes", icon: "≡", label: "Lanes", description: "Enable, disable or remove" },
+  { value: "send", icon: "↑", label: "Send message", description: "Send through the Mesh" },
+  { value: "inbox", icon: "↓", label: "Inbox / Reply", description: "Read and answer messages" },
+  { value: "agents", icon: "◇", label: "Mesh agents", description: "Browse participants" },
+  { value: "channels", icon: "#", label: "Channel drivers", description: "Discord and providers" },
+  { value: "attach", icon: "⌁", label: "Attach runtime", description: "Open the runtime session" },
+  { value: "hub", icon: "◆", label: "Hub & keys", description: "Connection and identity keys" },
+  { value: "quit", icon: "×", label: "Quit", description: "Leave Agent Mesh" },
+];
+
+function stateColor(state: string): string {
+  const normalized = state.toLowerCase();
+  if (["connected", "running", "ready", "idle", "active", "approved"].includes(normalized)) {
+    return GREEN;
+  }
+  if (["failed", "error", "conflict", "revoked", "dead-letter"].includes(normalized)) {
+    return RED;
+  }
+  return YELLOW;
+}
+
+function actionCell(
+  action: GridChoice<DashboardAction>,
+  selected: boolean,
+  width: number,
+  description: boolean,
+): string {
+  const content = description
+    ? `    ${action.description}`
+    : `${selected ? " ›" : "  "}  ${action.icon} ${action.label}`;
+  const padded = padVisible(clip(content, width), width);
+  if (selected) return paint(SELECTED, padded);
+  return description ? paint(DIM, padded) : padded;
+}
+
+function renderDashboard(
+  lanes: readonly DashboardLane[],
+  daemon: Awaited<ReturnType<typeof probeHostDaemon>>,
+  selectedIndex: number,
+): void {
+  const compact = (process.stdout.rows ?? 30) < 30;
+  heading("Overview", "Local control plane · live status");
+  const activeDrivers = daemon?.lanes.reduce((sum, lane) => sum + lane.active_drivers, 0) ?? 0;
+  const daemonState = daemon
+    ? `${paint(GREEN, "●")} ${paint(BOLD, "Daemon running")}`
+    : `${paint(RED, "●")} ${paint(BOLD, "Daemon stopped")}`;
+  writePanel("Host", [
+    `${daemonState}   ${paint(DIM, `PID ${daemon?.pid ?? "—"}  ·  Lanes ${lanes.length}  ·  Drivers ${activeDrivers}`)}`,
+  ]);
+  process.stdout.write("\n");
+
+  const laneLines: string[] = [];
+  if (!lanes.length) {
+    laneLines.push(
+      `${paint(YELLOW, "○")} No lanes configured`,
+      paint(DIM, "  Select Add lane to connect a runtime to the Mesh."),
     );
-    const action = (await reader.question("> ")).trim().toLowerCase();
-    if (action === "q") return;
-    if (action === "a") {
+  } else {
+    const visibleLanes = lanes.slice(0, compact ? 2 : 3);
+    for (const [index, lane] of visibleLanes.entries()) {
+      const hubState = lane.hub?.state ?? "not-configured";
+      const runtimeState = lane.runtime_status.state;
+      const outboxColor = lane.outbox.deadLetter > 0
+        ? RED
+        : lane.outbox.warning || lane.outbox.retry > 0
+          ? YELLOW
+          : GREEN;
+      if (compact) {
+        laneLines.push(
+          `${paint(stateColor(runtimeState), "●")} ${paint(BOLD, clip(lane.lane_id, 20))} ${paint(DIM, lane.runtime.toUpperCase())} · Hub ${paint(stateColor(hubState), hubState)} · Runtime ${paint(stateColor(runtimeState), runtimeState)} · Outbox ${paint(outboxColor, `${lane.outbox.pending}/${lane.outbox.retry}/${lane.outbox.deadLetter}`)}`,
+        );
+      } else {
+        laneLines.push(
+          `${paint(stateColor(runtimeState), "●")} ${paint(BOLD, clip(lane.lane_id, 28))}  ${paint(DIM, lane.runtime.toUpperCase())}`,
+          `  Hub ${paint(stateColor(hubState), hubState)}  ·  Runtime ${paint(stateColor(runtimeState), runtimeState)}  ·  Outbox ${paint(outboxColor, `${lane.outbox.pending}/${lane.outbox.retry}/${lane.outbox.deadLetter}`)}`,
+          `  Channels ${lane.channels.length ? clip(lane.channels.map((item) => `${item.id}:${item.status.state}`).join(", "), frameWidth() - 15) : paint(DIM, "none")}`,
+        );
+      }
+      const error = lane.hub?.lastError ?? lane.runtime_status.lastError;
+      if (error && (!compact || index === 0)) {
+        laneLines.push(`  ${paint(RED, `! ${clip(error, frameWidth() - 10)}`)}`);
+      }
+      if (!compact && index < visibleLanes.length - 1) laneLines.push("");
+    }
+    if (lanes.length > visibleLanes.length) {
+      laneLines.push(paint(DIM, `  … ${lanes.length - visibleLanes.length} more lanes`));
+    }
+  }
+  writePanel(`Lanes · ${lanes.length}`, laneLines);
+  process.stdout.write("\n");
+
+  const columns = dashboardColumns();
+  const cellWidth = Math.floor((frameWidth() - 5) / columns);
+  const actionLines: string[] = [];
+  for (let index = 0; index < DASHBOARD_ACTIONS.length; index += columns) {
+    const row = DASHBOARD_ACTIONS.slice(index, index + columns);
+    actionLines.push(
+      row.map((action, offset) => actionCell(action, index + offset === selectedIndex, cellWidth, false)).join("  "),
+    );
+    if (!compact) {
+      actionLines.push(
+        row.map((action, offset) => actionCell(action, index + offset === selectedIndex, cellWidth, true)).join("  "),
+      );
+      if (index + columns < DASHBOARD_ACTIONS.length) actionLines.push("");
+    }
+  }
+  writePanel("Actions", actionLines);
+  process.stdout.write(
+    `\n${paint(DIM, "↑ ↓ ← →  Navigate    Tab  Next    Enter  Select    Ctrl+C  Exit")}\n`,
+  );
+}
+
+async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
+  let selectedAction = 0;
+  while (true) {
+    const [lanes, daemon] = await Promise.all([
+      requestControl(options.runtimeDirectory, "lane.list", {}) as Promise<DashboardLane[]>,
+      probeHostDaemon(options.runtimeDirectory),
+    ]);
+    const selection = await selectGrid(
+      reader,
+      DASHBOARD_ACTIONS,
+      selectedAction,
+      dashboardColumns(),
+      (index) => renderDashboard(lanes, daemon, index),
+    );
+    selectedAction = selection.index;
+    const action = selection.value;
+    if (action === "quit") return;
+    if (action === "refresh") continue;
+    if (action === "add") {
       const store = new ConfigStore(options.configFile);
       const config = await store.load();
       if (!config.hub) throw new Error("Hub must be configured before creating a lane");
@@ -353,9 +618,9 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
       config.lanes.push(await createLane(reader, endpoints, config.lanes));
       await store.save(config);
       await requestControl(options.runtimeDirectory, "config.reload", {});
-    } else if (action === "l") {
+    } else if (action === "lanes") {
       await lanesScreen(reader, options);
-    } else if (action === "m") {
+    } else if (action === "send") {
       const lane = await ask(reader, "From lane", lanes[0]?.lane_id);
       const to = await ask(reader, "To identity");
       const content = await ask(reader, "Message");
@@ -366,14 +631,14 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
       });
       process.stdout.write(`\n✓ ${JSON.stringify(result)}\n`);
       await reader.question("Press Enter");
-    } else if (action === "g") {
+    } else if (action === "agents") {
       const lane = await ask(reader, "Lane", lanes[0]?.lane_id);
       const result = await requestControl(options.runtimeDirectory, "mesh.list_agents", {
         lane_id: lane,
       });
       process.stdout.write(`\n${JSON.stringify(result, null, 2)}\n`);
       await reader.question("Press Enter");
-    } else if (action === "h") {
+    } else if (action === "hub") {
       heading("Hub and identity keys");
       for (const lane of lanes) {
         process.stdout.write(
@@ -381,7 +646,7 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
         );
       }
       await reader.question("Press Enter");
-    } else if (action === "t") {
+    } else if (action === "attach") {
       const lane = await ask(reader, "Lane", lanes[0]?.lane_id);
       const selected = lanes.find((item) => item.lane_id === lane);
       if (!selected?.runtime_status.tmuxSession) {
@@ -398,9 +663,9 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
         await child.exited;
         reader.resume();
       }
-    } else if (action === "c") {
+    } else if (action === "channels") {
       await channelsScreen(reader, options, lanes.map((lane) => lane.lane_id));
-    } else if (action === "i") {
+    } else if (action === "inbox") {
       const lane = await ask(reader, "Lane", lanes[0]?.lane_id);
       const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
         lane_id: lane,

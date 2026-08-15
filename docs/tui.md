@@ -20,6 +20,8 @@ Antigravity one-shot lane은 tmux를 필수 dependency로 판정하지 않는다
 
 ## 운영 화면 필수 상태
 
+Overview는 색상·카드 기반 전체 화면으로 렌더링하고, Action grid는 `↑↓←→` 또는 Tab으로 이동해 Enter로 실행한다. 문자 단축키를 외우지 않아도 모든 주요 기능에 접근할 수 있어야 하며, 화면 갱신 뒤에도 선택 위치를 유지한다. 터미널 높이와 폭에 따라 설명을 접거나 Action grid를 1열로 전환한다.
+
 - daemon user service와 restart 상태
 - Hub endpoint/connection/protocol
 - lane identity와 key approval/fingerprint

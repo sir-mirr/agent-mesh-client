@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ConfigStore, ConfigValidationError } from "../src/config/store";
-import { deriveLaneId, moveSelection } from "../src/tui/app";
+import { deriveLaneId, moveGridSelection, moveSelection } from "../src/tui/app";
 import type { AgentMeshConfig } from "../src/config/types";
 
 const roots: string[] = [];
@@ -73,5 +73,13 @@ describe("TUI lane identity", () => {
     expect(moveSelection(0, 3, 1)).toBe(1);
     expect(moveSelection(2, 3, 1)).toBe(0);
     expect(moveSelection(0, 3, -1)).toBe(2);
+  });
+
+  test("moves dashboard choices as a wrapping two-column grid", () => {
+    expect(moveGridSelection(0, 10, 2, "right")).toBe(1);
+    expect(moveGridSelection(1, 10, 2, "down")).toBe(3);
+    expect(moveGridSelection(9, 10, 2, "down")).toBe(1);
+    expect(moveGridSelection(0, 10, 2, "up")).toBe(8);
+    expect(moveGridSelection(0, 10, 2, "left")).toBe(9);
   });
 });

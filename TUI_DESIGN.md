@@ -96,13 +96,13 @@ Agent Mesh TUI
 ## 6. 공통 화면
 
 ```text
-┌ Agent Mesh ───────────────────────── Hub ● Connected ────────┐
+╭─ Agent Mesh ──────────────────────── Hub ● Connected ────────╮
 │                                                              │
 │  Main content                                                │
 │                                                              │
 ├──────────────────────────────────────────────────────────────┤
-│ [key] Action                                      [?] Help   │
-└──────────────────────────────────────────────────────────────┘
+│ ↑↓←→ Navigate                    Enter Select   Ctrl+C Exit   │
+╰──────────────────────────────────────────────────────────────╯
 ```
 
 - Header: 제품명, 현재 문맥, Hub 상태
@@ -323,24 +323,30 @@ OAuth가 필요하면 일반 form 안에서 credential을 받지 않고 임시 P
 ## 9. 운영 대시보드
 
 ```text
- Agent Mesh       Daemon ● Healthy               Hub ● Connected
+ ◆ AGENT MESH · Overview
+ Local control plane · live status
 
- Lanes
- ┌──────────────────────────────────────────────────────────────┐
- │ agent-a   Claude   ● Running   Channels 2   Outbox 0         │
- │ agent-b   Codex    ◐ Approval Channels 1   Outbox 14         │
- │ agent-c   Claude   ○ Stopped   Channels 0   Outbox 0         │
- └──────────────────────────────────────────────────────────────┘
+ ╭─ Host ───────────────────────────────────────────────────────╮
+ │ ● Daemon running   PID 12031 · Lanes 3 · Drivers 2           │
+ ╰──────────────────────────────────────────────────────────────╯
 
- Warnings
-   ◐ agent-b: key approval pending, fingerprint SHA256:7b:2e:...:91
-   ! Disk usage: outbox 8.3 GiB
+ ╭─ Lanes · 3 ──────────────────────────────────────────────────╮
+ │ ● agent-a  CLAUDE                                            │
+ │   Hub connected · Runtime running · Outbox 0/0/0             │
+ │   Channels discord-main:running                              │
+ ╰──────────────────────────────────────────────────────────────╯
 
- [Enter] Open   [a] Add lane   [u] Start   [s] Stop
- [h] Hub       [d] Diagnostics [r] Refresh [q] Quit
+ ╭─ Actions ────────────────────────────────────────────────────╮
+ │ › ↻ Refresh                  + Add lane                       │
+ │   Reload live status          Create an agent identity       │
+ │   ≡ Lanes                     ↑ Send message                  │
+ │   ↓ Inbox / Reply             ◇ Mesh agents                   │
+ ╰──────────────────────────────────────────────────────────────╯
+
+ ↑ ↓ ← → Navigate    Tab Next    Enter Select    Ctrl+C Exit
 ```
 
-오류와 전이 중인 lane을 먼저 보여주고 같은 상태에서는 lane ID로 정렬한다. 자동 갱신 중에도 선택 위치를 유지한다.
+Overview는 문자 단축키를 요구하지 않는다. 2열 Action grid를 방향키로 이동하고 Enter로 실행하며, 선택 항목은 색상 배경으로 강조한다. 갱신하거나 하위 화면에서 돌아와도 선택 위치를 유지한다. Host, lane, Hub/runtime, outbox와 channel 상태는 색상과 카드 경계로 구분한다. 낮은 터미널에서는 설명과 부가 상태를 접는 compact layout으로 자동 전환하고, 좁은 터미널에서는 Action grid를 1열로 바꾼다.
 
 ## 10. Lane 상세
 
