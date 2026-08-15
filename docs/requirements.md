@@ -2,7 +2,7 @@
 
 > 상태: Frozen
 
-이 문서는 수용 테스트와 설계 문서가 참조할 안정적인 requirement ID를 정의한다. 구체적인 수치와 우선순위는 [`../SPEC.md`](../SPEC.md)가 우선한다.
+이 문서는 수용 테스트와 설계 문서가 참조할 안정적인 requirement ID를 정의한다. 구체적인 수치와 우선순위는 [`../CLIENT_NOTES.md`](../CLIENT_NOTES.md)가 우선하며, 그 위의 규범 계약은 platform 저장소의 `SPEC.md`다.
 
 | ID | 등급 | 요건 |
 |---|---|---|
