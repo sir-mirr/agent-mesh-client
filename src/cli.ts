@@ -191,7 +191,7 @@ function runtimeKind(options: ParsedOptions): RuntimeKind {
 function defaultAgentType(runtime: RuntimeKind): string {
   if (runtime === "claude") return "ai-claude";
   if (runtime === "codex") return "ai-codex";
-  return "ai-cli-adapter";
+  return "ai-antigravity";
 }
 
 async function mutateConfig(

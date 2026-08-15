@@ -338,7 +338,7 @@ async function askSecret(reader: Reader, prompt: string, allowBack = false): Pro
 function agentType(runtime: RuntimeKind): string {
   if (runtime === "claude") return "ai-claude";
   if (runtime === "codex") return "ai-codex";
-  return "ai-cli-adapter";
+  return "ai-antigravity";
 }
 
 export function deriveLaneId(
