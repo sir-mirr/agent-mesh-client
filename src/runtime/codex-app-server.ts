@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
+import { stat, unlink } from "node:fs/promises";
 import type { RuntimeConfig } from "../config/types";
+import { connectWsUnix, type WsUnixConnection } from "./ws-unix-client";
 import type {
   RuntimeAdapter,
   RuntimeInvocation,
@@ -90,6 +92,7 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
   readonly kind = "codex" as const;
   readonly #pending = new Map<number | string, PendingRequest>();
   #child: ChildProcessWithoutNullStreams | null = null;
+  #socket: WsUnixConnection | null = null;
   #ready: Promise<void> | null = null;
   #nextId = 1;
   #active: ActiveTurn | null = null;
@@ -98,7 +101,19 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
   constructor(
     readonly config: RuntimeConfig,
     readonly onDiagnostic?: (message: string, error?: unknown) => void,
+    /**
+     * When set, the app-server listens here instead of on stdio, so a
+     * `codex --remote unix://<path>` TUI can attach to the same session an
+     * operator is watching. Without it the server is a private child that
+     * nothing else can see.
+     */
+    readonly socketPath?: string,
   ) {}
+
+  /** The address an operator's `codex --remote` should connect to, if any. */
+  get observeAddress(): string | null {
+    return this.socketPath ? `unix://${this.socketPath}` : null;
+  }
 
   async run(invocation: RuntimeInvocation): Promise<RuntimeResult> {
     await this.#ensureReady();
@@ -192,6 +207,8 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
 
   async stop(): Promise<void> {
     const child = this.#child;
+    this.#socket?.close();
+    this.#socket = null;
     this.#child = null;
     this.#ready = null;
     if (!child || child.exitCode !== null) return;
@@ -215,13 +232,18 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
   }
 
   async #start(): Promise<void> {
-    const child = spawn(executable(this.config), ["app-server", "--listen", "stdio://"], {
+    const listen = this.socketPath ? `unix://${this.socketPath}` : "stdio://";
+    // A socket left behind by a killed server makes the new one fail to bind.
+    if (this.socketPath) await unlink(this.socketPath).catch(() => undefined);
+    const child = spawn(executable(this.config), ["app-server", "--listen", listen], {
       cwd: this.config.workspace,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.#child = child;
-    createInterface({ input: child.stdout }).on("line", (line) => this.#onLine(line));
+    if (!this.socketPath) {
+      createInterface({ input: child.stdout }).on("line", (line) => this.#onLine(line));
+    }
     child.stderr.on("data", (chunk: Buffer) => {
       this.#stderr = (this.#stderr + chunk.toString("utf8")).slice(-65_536);
     });
@@ -240,6 +262,7 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
         ),
       );
     });
+    if (this.socketPath) await this.#connectSocket(this.socketPath);
     await this.#request("initialize", {
       clientInfo: {
         name: "agent_mesh_client",
@@ -370,10 +393,52 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
 
   #write(message: unknown): void {
     const child = this.#child;
-    if (!child || child.exitCode !== null || !child.stdin.writable) {
+    if (!child || child.exitCode !== null) {
+      throw new RuntimeAdapterError("PROCESS_EXITED", "Codex app-server is not writable");
+    }
+    if (this.#socket) {
+      this.#socket.send(JSON.stringify(message));
+      return;
+    }
+    if (!child.stdin.writable) {
       throw new RuntimeAdapterError("PROCESS_EXITED", "Codex app-server is not writable");
     }
     child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  /**
+   * The unix transport is a WebSocket at `/rpc`, not the NDJSON that stdio
+   * carries. Connecting with raw JSON is closed without an error, so the
+   * mistake reads as a broken server rather than a wrong protocol.
+   */
+  async #connectSocket(path: string): Promise<void> {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const exists = await stat(path).then(() => true, () => false);
+      if (exists) break;
+      if (this.#child?.exitCode !== null && this.#child?.exitCode !== undefined) {
+        throw new RuntimeAdapterError(
+          "PROCESS_EXITED",
+          `Codex app-server exited before binding ${path}${
+            this.#stderr.trim() ? `: ${this.#stderr.trim().slice(-500)}` : ""
+          }`,
+        );
+      }
+      if (Date.now() > deadline) {
+        throw new RuntimeAdapterError(
+          "RUNTIME_NOT_READY",
+          `Codex app-server did not bind ${path} within 15s`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    this.#socket = await connectWsUnix(path, "/rpc", {
+      onMessage: (payload) => this.#onLine(payload),
+      onClose: (reason) => {
+        this.#socket = null;
+        this.#failAll(new RuntimeAdapterError("PROCESS_EXITED", `Codex app-server: ${reason}`));
+      },
+    });
   }
 
   #failAll(error: Error): void {

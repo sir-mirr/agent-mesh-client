@@ -30,28 +30,21 @@ agent-mesh
 | Codex | `codex` (공식 installer) | 공식 `codex app-server --listen stdio://` |
 | Antigravity | `agy` | turn마다 `agy --print --output-format json` |
 
-### Codex는 Homebrew cask로 설치하면 tmux 관찰이 불가능합니다
+### Codex 세션 관찰
 
-Codex 세션을 tmux에서 들여다보려면 `codex app-server daemon`이 필요하고, 그 daemon은 **공식 installer가 관리하는 standalone 경로에서만** 기동합니다.
+Codex lane의 app-server는 lane마다 unix socket에 붙습니다.
 
 ```
-$ codex app-server daemon start
-Error: managed standalone Codex install not found at
-  /Users/<you>/.codex/packages/standalone/current/codex
-
-This command requires the standalone install managed by the Codex installer,
-because the daemon starts and updates app-server from that fixed path.
+codex app-server --listen unix://<runtime-dir>/codex-<lane>.sock
 ```
 
-Homebrew cask(`brew install --cask codex`)는 `/opt/homebrew/bin/codex`에 바이너리만 놓고 그 standalone 경로를 만들지 않습니다. cask만 설치된 호스트에서 Codex lane은 정상 동작하지만 — 데몬이 자체 `app-server --listen stdio://` child를 띄웁니다 — 그 child는 tmux window가 아니라 pipe로만 붙는 숨은 프로세스라 `agent-mesh attach`로 볼 수 없습니다.
+`agent-mesh attach <lane-id>`는 그 socket에 `codex --remote unix://<path> --no-alt-screen` TUI를 tmux로 띄웁니다. 데몬과 관찰자가 **같은 app-server**를 공유하므로 계정·설정·MCP 서버가 하나입니다. 세션이 없으면 attach가 만들고, 있으면 붙습니다.
 
-공식 installer로 전환하려면:
+이 경로는 Homebrew cask와 공식 installer 어느 쪽에서도 동작합니다 — `--listen unix://`와 `--remote`는 두 설치 모두에 있습니다. 공식 installer의 standalone 경로(`~/.codex/packages/standalone/current/`)가 필요한 것은 `codex app-server daemon` 계열뿐이고, 이 클라이언트는 그것을 쓰지 않습니다. 두 설치가 공존하면 PATH 순서가 어느 바이너리를 쓸지 결정하므로 `agent-mesh doctor`로 확인하십시오.
 
-```sh
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
-```
+관찰자 TUI는 자기 thread를 엽니다. 데몬이 돌리는 turn은 같은 서버의 다른 thread라, 관찰자 화면에 그 turn이 자동으로 나타나지는 않습니다.
 
-`~/.local/bin/codex`와 `~/.codex/packages/standalone/current/`가 생깁니다. 두 설치가 공존하면 **PATH 순서가 어느 쪽이 실행될지를 결정합니다** — 데몬은 서비스 등록 시 기록된 PATH로 `codex`를 찾으므로, cask를 남겨둘 경우 어느 바이너리가 잡히는지 `agent-mesh doctor`로 확인하십시오.
+app-server의 unix transport는 stdio와 프로토콜이 다릅니다 — `/rpc`의 WebSocket이고 NDJSON이 아닙니다. 직접 붙을 일이 있다면 [`src/runtime/ws-unix-client.ts`](./src/runtime/ws-unix-client.ts)를 보십시오.
 
 ## 첫 실행
 

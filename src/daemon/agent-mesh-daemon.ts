@@ -1,5 +1,6 @@
 import type { JsonRpcRequest } from "../channel-rpc/json-rpc";
 import { ConfigStore } from "../config/store";
+import { appServerSocketPath } from "../config/paths";
 import type { AgentMeshConfig, LaneConfig } from "../config/types";
 import { LaneController } from "../lane/lane-controller";
 import { LaneHubConnection } from "../hub/lane-hub-connection";
@@ -171,6 +172,11 @@ export class AgentMeshDaemon {
     const adapter = createRuntimeAdapter(
       controller.config.runtime,
       this.#onDiagnostic,
+      // Codex only: the app-server listens on this path so `agent-mesh attach`
+      // can point a `codex --remote` TUI at the session the daemon is driving.
+      controller.config.runtime.kind === "codex"
+        ? appServerSocketPath(this.#runtimeDirectory, controller.config.id)
+        : undefined,
     );
     const worker = new RuntimeWorker({
       laneId: controller.config.id,

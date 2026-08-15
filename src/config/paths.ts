@@ -44,6 +44,20 @@ export function laneSocketPath(runtimeDirectory: string, laneId: string): string
   return validateSocketPath(join(runtimeDirectory, laneSocketName(laneId)));
 }
 
+/**
+ * Where the Codex app-server for a lane listens.
+ *
+ * Separate from the lane's own channel socket because a different program
+ * owns it: `codex app-server --listen unix://PATH` creates this one, and the
+ * `codex --remote` TUI connects to the same path so an operator can watch the
+ * session the daemon is driving.
+ */
+export function appServerSocketPath(runtimeDirectory: string, laneId: string): string {
+  if (laneId.length === 0) throw new Error("lane ID must not be empty");
+  const digest = createHash("sha256").update(laneId, "utf8").digest("hex");
+  return validateSocketPath(join(runtimeDirectory, `codex-${digest.slice(0, 24)}.sock`));
+}
+
 export function controlSocketPath(runtimeDirectory: string): string {
   return validateSocketPath(join(runtimeDirectory, "control.sock"));
 }

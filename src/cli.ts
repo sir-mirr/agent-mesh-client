@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { basename, resolve } from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { defaultLocations } from "./config/locations";
-import { laneSocketPath, laneStorageName } from "./config/paths";
+import { appServerSocketPath, laneSocketPath, laneStorageName } from "./config/paths";
 import { ConfigStore } from "./config/store";
 import type { LaneConfig, RuntimeKind } from "./config/types";
 import { AgentMeshDaemon } from "./daemon/agent-mesh-daemon";
@@ -271,6 +271,46 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     const tmux = Bun.which("tmux");
     if (!tmux) throw new Error("tmux is not installed");
     const session = `mesh-${laneStorageName(command)}`;
+    const lane = (await new ConfigStore(options.configFile).load()).lanes.find(
+      (item) => item.id === command,
+    );
+    // Claude's session is created by its supervisor and holds the CLI itself.
+    // Codex has no such process: the daemon drives an app-server, and what an
+    // operator attaches to is a second client of that same server. It is
+    // created on demand here so attaching does not depend on having asked for
+    // a session earlier.
+    if (lane?.runtime.kind === "codex") {
+      const socket = appServerSocketPath(options.runtimeDirectory, command);
+      // `Bun.file().exists()` is false for a socket -- it answers for regular
+      // files. Ask the filesystem whether the path exists at all.
+      const listening = await stat(socket).then(() => true, () => false);
+      if (!listening) {
+        throw new Error(
+          `Codex app-server is not listening for ${command}. Start the lane first: agent-mesh up`,
+        );
+      }
+      const codex = lane.runtime.command ?? Bun.which("codex");
+      if (!codex) throw new Error("codex is not installed");
+      const running = Bun.spawnSync([tmux, "has-session", "-t", session], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if (running.exitCode !== 0) {
+        const created = Bun.spawnSync(
+          [tmux, "new-session", "-d", "-s", session, "-c", lane.runtime.workspace,
+            // Inline rather than the alternate screen: an observer wants the
+            // scrollback of what the daemon did, and the alternate screen
+            // discards it on exit.
+            codex, "--remote", `unix://${socket}`, "--no-alt-screen"],
+          { stdout: "pipe", stderr: "pipe" },
+        );
+        if (created.exitCode !== 0) {
+          throw new Error(
+            `Failed to open a Codex observer session: ${new TextDecoder().decode(created.stderr).trim()}`,
+          );
+        }
+      }
+    }
     const child = Bun.spawn([tmux, "attach-session", "-t", session], {
       stdin: "inherit",
       stdout: "inherit",
