@@ -524,7 +524,13 @@ interface DashboardLane {
     fingerprint?: string;
     lastError: string | null;
   } | null;
-  runtime_status: { state: string; tmuxSession?: string; lastError?: string | null };
+  runtime_status: {
+    state: string;
+    tmuxSession?: string;
+    lastError?: string | null;
+    /** The question a blocked runtime is showing, when it is blocked. */
+    prompt?: string | null;
+  };
   outbox: { pending: number; retry: number; deadLetter: number; warning: boolean };
   channels: Array<{
     id: string;
@@ -544,6 +550,9 @@ function stateColor(state: string): string {
   if (["failed", "error", "conflict", "revoked", "dead-letter"].includes(normalized)) {
     return RED;
   }
+  // Not an error: someone has to answer, and the colour should send them
+  // there rather than read as a fault to investigate.
+  if (normalized === "awaiting-input") return YELLOW;
   return YELLOW;
 }
 
@@ -692,6 +701,12 @@ function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
     `Hub        ${paint(stateColor(hubState), hubState)}`,
     `Key        ${paint(stateColor(agent.hub?.keyStatus ?? "unknown"), agent.hub?.keyStatus ?? "unknown")}`,
     `Runtime    ${paint(stateColor(runtimeState), runtimeState)}`,
+    // A blocked runtime is the one case where the operator has to go to the
+    // session rather than wait, so the question is on the screen that says so.
+    ...(runtimeState === "awaiting-input" && agent.runtime_status.prompt
+      ? [`           ${paint(YELLOW, clip(agent.runtime_status.prompt, frameWidth() - 14))}`,
+         paint(DIM, `           agent-mesh attach ${agent.lane_id}`)]
+      : []),
     `Channels   ${agent.channels.length ? agent.channels.map((item) => `${item.id}:${item.status.state}`).join(", ") : "none"}`,
     // Spelled out here rather than the overview's three slashed numbers: this
     // is the screen where an operator decides whether to act on them.

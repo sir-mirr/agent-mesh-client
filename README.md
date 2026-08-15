@@ -81,6 +81,10 @@ TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 
 agent-mesh attach <lane-id>
 ```
 
+Claude는 새 workspace에서 사람 답변을 **세 번** 요구합니다 — workspace 신뢰, development channel 경고, 그리고 첫 `reply` MCP tool 호출. 답하기 전까지 turn은 진행되지 않습니다.
+
+이 대기는 상태로 구분됩니다. 해당 lane의 runtime 상태가 `running`이 아니라 **`awaiting-input`**이 되고 화면에 뜬 질문이 함께 표시되므로, 느린 turn과 헷갈리지 않습니다. 판정은 tmux pane에서 선택 커서(`❯ 1.`)를 읽어서 하며 — MCP 쪽으로는 대기 중 아무 신호도 오지 않기 때문에 — 시간으로 추측하지 않습니다.
+
 Hub 관리자는 TUI의 전체 Ed25519 fingerprint와 Hub 승인 화면의 값을 대조해 key를 승인해야 합니다. 승인 전에도 로컬 channel 메시지와 첨부는 outbox에 보존되지만 mesh 송신과 Hub 감사 적재는 대기합니다.
 
 ## 주요 CLI
