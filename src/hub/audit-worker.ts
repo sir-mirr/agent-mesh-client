@@ -1,10 +1,9 @@
 import {
   AUDIT_SCHEMA_VERSION,
-  ERROR_CLASS,
   MESH_ERROR,
   deriveBlobKey,
+  errorClass,
   errorDataCode,
-  type ErrorClass,
   type AuditAttachmentRef,
   type PrepareBlobsResult,
 } from "@agent-mesh/contracts";
@@ -12,13 +11,6 @@ import type { IdentityKeyManager } from "../identity/key-manager";
 import type { LaneOutbox } from "../outbox/lane-outbox";
 import type { StoredAuditEvent } from "../outbox/types";
 import { HubRpcError, type MeshClient } from "./mesh-client";
-
-export function classifyAuditRpcError(code: number): ErrorClass {
-  // Unlisted codes retry. A code this table has never heard of comes from a
-  // Hub newer than our contracts pin, and retrying something permanent costs
-  // less than dead-lettering something that would have succeeded.
-  return ERROR_CLASS[code] ?? "transient";
-}
 
 /**
  * What to record for an operator, as opposed to what to do about it.
@@ -153,8 +145,11 @@ export class AuditWorker {
     } catch (error) {
       const rpcError = error instanceof HubRpcError ? error : null;
       const httpError = error instanceof AuditHttpError ? error : null;
+      // `errorClass`, not a local lookup with a fallback: SPEC § 8.9.3 makes an
+      // unclassified code permanent, and a `?? "transient"` of our own would
+      // turn a code from a newer Hub into an unbounded retry.
       const classification = rpcError
-        ? classifyAuditRpcError(rpcError.code)
+        ? errorClass(rpcError.code)
         : httpError?.permanent
           ? "permanent"
           : "transient";

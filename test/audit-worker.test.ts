@@ -1,27 +1,31 @@
 import { describe, expect, test } from "bun:test";
-import { ERROR_CLASS, ERROR_DATA_CODE, MESH_ERROR } from "@agent-mesh/contracts";
-import { auditErrorCode, classifyAuditRpcError } from "../src/hub/audit-worker";
+import { ERROR_CLASS, ERROR_DATA_CODE, MESH_ERROR, errorClass } from "@agent-mesh/contracts";
+import { auditErrorCode } from "../src/hub/audit-worker";
 import { HubRpcError } from "../src/hub/mesh-client";
 
 describe("audit retry classification", () => {
   test("dead-letters the Hub catch-all append failure", () => {
-    expect(classifyAuditRpcError(MESH_ERROR.SERVER_ERROR)).toBe("permanent");
+    expect(errorClass(MESH_ERROR.SERVER_ERROR)).toBe("permanent");
   });
 
   test("keeps explicit Hub load shedding retryable", () => {
-    expect(classifyAuditRpcError(MESH_ERROR.AUDIT_BUSY)).toBe("transient");
+    expect(errorClass(MESH_ERROR.AUDIT_BUSY)).toBe("transient");
   });
 
-  test("fails unknown transport-era RPC codes toward retry", () => {
-    expect(classifyAuditRpcError(-32999)).toBe("transient");
+  // Reversed at contracts v0.7.3, and the reversal is the point: an unlisted
+  // code comes from a Hub newer than this pin, and retrying it forever is the
+  // failure -32000 already caused once. Permanent means quarantine and alert,
+  // so an unknown condition reaches a person instead of a retry loop.
+  test("fails codes this pin has never heard of toward quarantine", () => {
+    expect(errorClass(-32999)).toBe("permanent");
   });
 
   // Under the v0.7.0 pin, -32000 was classified only because this repository
-  // hardcoded it: the contracts table had no entry and the fallback absorbed
-  // the gap silently. Asserting one code at a time cannot catch the code
-  // nobody thought to assert, so require the whole § 8.9.3 set to be present
-  // in the table rather than merely to survive the fallback.
-  test("classifies every audit failure code from the table, not the fallback", () => {
+  // hardcoded it: the contracts table had no entry and a local fallback
+  // absorbed the gap silently. Asserting one code at a time cannot catch the
+  // code nobody thought to assert, so require the whole § 8.9.3 set to be
+  // present in the table rather than merely to survive the default.
+  test("classifies every audit failure code from the table, not the default", () => {
     const auditCodes = [
       MESH_ERROR.AUDIT_MISSING_BLOBS,
       MESH_ERROR.AUDIT_EVENT_CONFLICT,
@@ -32,7 +36,7 @@ describe("audit retry classification", () => {
     const classified = auditCodes.map((code) => ({
       code,
       inTable: Object.hasOwn(ERROR_CLASS, code),
-      class: classifyAuditRpcError(code),
+      class: errorClass(code),
     }));
     expect(classified).toEqual([
       { code: MESH_ERROR.AUDIT_MISSING_BLOBS, inTable: true, class: "transient" },
