@@ -36,7 +36,7 @@
 | `UX-001` | MUST | YAML, UDS와 내부 port를 직접 편집하지 않고 첫 lane을 실행할 수 있어야 한다. |
 | `UX-002` | MUST | 모든 필수 TUI 작업에 non-interactive CLI가 있어야 한다. |
 | `UX-003` | MUST | 사람에게 보이는 TUI는 Agent를 최상위 관리 대상으로 사용하고 내부 Lane 용어를 노출하지 않아야 한다. |
-| `UX-004` | MUST | TUI 하위 화면과 wizard는 Esc로 상위 화면에 돌아가야 한다. Backspace는 문자 삭제 전용이며 화면을 벗어나면 안 된다 — 마지막 글자를 지운 뒤의 Backspace가 화면을 닫는 사고가 반복됐다. |
+| `UX-004` | MUST | TUI 하위 화면과 wizard는 Esc로 상위 화면에 돌아가야 한다. Overview에서는 Esc가 아무 동작도 하지 않아야 하며 종료는 Quit 항목으로만 이뤄져야 한다. Backspace는 문자 삭제 전용이며 화면을 벗어나면 안 된다 — 마지막 글자를 지운 뒤의 Backspace가 화면을 닫는 사고가 반복됐다. |
 | `UX-005` | MUST | TUI는 존재하는 Agent/Channel만 선택하게 하고 대상이 없으면 enable/disable/remove 같은 적용 불가능한 action을 숨겨야 한다. |
 | `DIST-001` | MUST | 최종 사용자는 Bun/Node/npm 없이 standalone binary를 설치할 수 있어야 한다. |
 | `CON-001` | MUST | Hub contract를 immutable public Git tag로 고정해야 한다. |

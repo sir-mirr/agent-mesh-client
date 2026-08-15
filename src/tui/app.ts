@@ -181,6 +181,11 @@ async function selectGrid<T extends string>(
   initialIndex: number,
   columns: number,
   render: (selectedIndex: number) => void,
+  // The top screen passes false. Esc there has nowhere to go back to, so it
+  // used to leave the TUI -- the same keystroke that means "out of this
+  // screen" everywhere else meant "out of the program" in the one place it
+  // could not be undone. Leaving is the Quit item's job.
+  allowBack = true,
 ): Promise<{ value: T; index: number }> {
   if (!choices[initialIndex]) throw new Error("Grid has no initial choice");
   const stdin = process.stdin;
@@ -206,6 +211,7 @@ async function selectGrid<T extends string>(
       key: { name?: string; ctrl?: boolean },
     ) => {
       if (key.name === "escape") {
+        if (!allowBack) return;
         cleanup();
         process.stdout.write("\n");
         reject(new BackNavigation());
@@ -644,7 +650,7 @@ function renderDashboard(
   }
   writePanel(`Agents · ${lanes.length}`, agentLines);
   process.stdout.write(
-    `\n${paint(DIM, "↑ ↓  Select    Enter  Open    Esc  Back    Ctrl+C  Exit")}\n`,
+    `\n${paint(DIM, "↑ ↓  Select    Enter  Open    Quit  Leave    Ctrl+C  Force exit")}\n`,
   );
 }
 
@@ -856,6 +862,7 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
         selectedIndex,
         1,
         (index) => renderDashboard(agents, daemon, choices, index),
+        false,
       );
     } catch (error) {
       if (error instanceof BackNavigation) return;

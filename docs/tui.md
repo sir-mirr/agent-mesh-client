@@ -24,7 +24,7 @@ Overview는 색상·카드 기반 전체 화면으로 렌더링하고 등록된 
 
 등록된 Agent가 없어도 등록 wizard를 강제로 열지 않는다. `Agents · 0`, `No agents registered.`와 선택 가능한 `+ Add Agent`를 먼저 보여주고, 사용자가 Enter를 눌렀을 때만 wizard를 시작한다.
 
-모든 하위 화면과 wizard는 Esc로 이전 화면에 돌아간다. Backspace는 문자 삭제에만 쓰며 화면을 벗어나지 않는다. Channel Driver가 없으면 Add와 Back만 표시하며, enable/disable/remove는 적용 가능한 Driver가 있을 때만 표시하고 대상을 키보드로 선택한다.
+모든 하위 화면과 wizard는 Esc로 이전 화면에 돌아간다. Overview는 예외로 Esc를 무시한다 — 돌아갈 상위 화면이 없어 종료가 되고, 다른 화면에서 "이 화면 나가기"인 키가 유일하게 되돌릴 수 없는 자리에서만 "프로그램 나가기"가 된다. 종료는 Quit 항목이 담당한다. Backspace는 문자 삭제에만 쓰며 화면을 벗어나지 않는다. Channel Driver가 없으면 Add와 Back만 표시하며, enable/disable/remove는 적용 가능한 Driver가 있을 때만 표시하고 대상을 키보드로 선택한다.
 
 - daemon user service와 restart 상태
 - Hub endpoint/connection/protocol
