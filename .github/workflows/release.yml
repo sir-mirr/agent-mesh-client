@@ -1,0 +1,57 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14
+            target: bun-darwin-arm64
+            asset: darwin-arm64
+          - runner: macos-13
+            target: bun-darwin-x64
+            asset: darwin-x64
+          - runner: ubuntu-latest
+            target: bun-linux-x64
+            asset: linux-x64
+          - runner: ubuntu-24.04-arm
+            target: bun-linux-arm64
+            asset: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun test
+      - run: bun build --compile --target=${{ matrix.target }} ./src/cli.ts --outfile=agent-mesh
+      - run: tar -czf agent-mesh-${{ matrix.asset }}.tar.gz agent-mesh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-mesh-${{ matrix.asset }}
+          path: agent-mesh-${{ matrix.asset }}.tar.gz
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum *.tar.gz > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS

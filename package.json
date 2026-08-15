@@ -1,0 +1,52 @@
+{
+  "name": "@agent-mesh/client",
+  "version": "0.1.0-dev.0",
+  "description": "One local daemon and CLI for connecting agent runtimes and channel drivers to Agent Mesh.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "packageManager": "bun@1.3.13",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "bin": {
+    "agent-mesh": "./dist/cli.js",
+    "agent-meshd": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/*.js",
+    "dist/**/*.js",
+    "dist/*.d.ts",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/cli.ts ./src/index.ts --target=bun --outdir=dist",
+    "build:types": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "compile": "bun build --compile ./src/cli.ts --outfile=dist/agent-mesh",
+    "compile:darwin-arm64": "bun build --compile --target=bun-darwin-arm64 ./src/cli.ts --outfile=dist/agent-mesh-darwin-arm64",
+    "compile:darwin-x64": "bun build --compile --target=bun-darwin-x64 ./src/cli.ts --outfile=dist/agent-mesh-darwin-x64",
+    "compile:linux-x64": "bun build --compile --target=bun-linux-x64 ./src/cli.ts --outfile=dist/agent-mesh-linux-x64",
+    "compile:linux-arm64": "bun build --compile --target=bun-linux-arm64 ./src/cli.ts --outfile=dist/agent-mesh-linux-arm64",
+    "dev": "bun run ./src/cli.ts",
+    "test": "bun test",
+    "test:e2e:live": "bun run ./scripts/e2e-live.ts",
+    "test:watch": "bun test --watch",
+    "prepack": "bun run check && bun test && bun run build"
+  },
+  "dependencies": {
+    "@agent-mesh/contracts": "github:sir-mirr/agent-mesh-contracts#v0.5.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "7.0.2"
+  }
+}

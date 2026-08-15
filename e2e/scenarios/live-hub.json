@@ -1,0 +1,15 @@
+{
+  "id": "E2E-LIVE-HUB-001",
+  "description": "Two signed Codex lanes, Unicode mesh round-trip loop guard, direct channel reply, attachment Blob upload and final audit ACK against a live Hub harness.",
+  "command": "AGENT_MESH_E2E_READY_FILE=/path/to/ready.json bun run test:e2e:live",
+  "assertions": [
+    "both Ed25519 lane keys require and receive explicit admin approval",
+    "Unicode mesh message is delivered and exactly one runtime reply is observed",
+    "replaying the same client_message_id returns the original message id and duplicate=true",
+    "a mesh reply is OBSERVED and never becomes a new automatic turn",
+    "channel inbound is ACKed only after local message and attachment durability",
+    "provider receives one immutable-correlation reply",
+    "Hub final-ACKs inbound/requested/succeeded audit events",
+    "admin audit query returns the SHA-256-addressed attachment"
+  ]
+}
