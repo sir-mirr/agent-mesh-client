@@ -118,11 +118,20 @@ export class ClaudeSupervisor {
       return;
     }
     const mcp = mcpCommand(this.options);
-    await writeAtomicJson(this.mcpConfigPath, {
+    const servers = {
       mcpServers: {
         "agent-mesh": { type: "stdio", command: mcp.command, args: mcp.args },
       },
-    });
+    };
+    await writeAtomicJson(this.mcpConfigPath, servers);
+    // In the workspace as well, because `--dangerously-load-development-channels
+    // server:<name>` resolves that name against the project MCP registry and
+    // not against `--mcp-config`. With only the flag, tools worked -- the model
+    // could call them -- while the channel never attached, so inbound mesh
+    // messages were never pushed and someone had to ask the session to look.
+    // This file is read for the name; `--strict-mcp-config` still decides
+    // which servers run, so no other server loads.
+    await writeAtomicJson(resolve(this.options.lane.runtime.workspace, ".mcp.json"), servers);
     const args = [
       "new-session",
       "-d",
@@ -131,11 +140,24 @@ export class ClaudeSupervisor {
       "-c",
       this.options.lane.runtime.workspace,
       claude,
+      // Both, and each for its own reason. `--mcp-config` is what actually
+      // starts the server -- a project `.mcp.json` alone waits on an approval
+      // gate and never spawns unattended. The file is what makes
+      // `server:agent-mesh` resolve, because the channel name is looked up in
+      // the project registry and not among the servers this flag passes.
       "--mcp-config",
       this.mcpConfigPath,
       "--strict-mcp-config",
       "--dangerously-load-development-channels",
       "server:agent-mesh",
+      // A lane exists to answer without a person at the keyboard. Left to
+      // prompt, the first reply blocks on a permission dialog and the turn
+      // sits in RUNNING until someone notices.
+      "--allowedTools",
+      "mcp__agent-mesh__reply",
+      "mcp__agent-mesh__send_message",
+      "mcp__agent-mesh__list_agents",
+      "mcp__agent-mesh__fetch_messages",
       "--name",
       `Agent Mesh · ${this.options.lane.id}`,
     ];
@@ -170,6 +192,7 @@ export class ClaudeSupervisor {
       lastError: null,
       prompt: null,
     };
+    await this.#confirmStartupGates(tmux);
   }
 
   async stop(): Promise<void> {
@@ -181,6 +204,50 @@ export class ClaudeSupervisor {
       });
     }
     this.#status = { ...this.#status, state: "stopped" };
+  }
+
+  /**
+   * Gates the CLI raises before it will accept a turn, answered by keystroke.
+   *
+   * Both are consequences of how the daemon launches this lane, not decisions
+   * left to whoever happens to attach later: the development-channel warning
+   * exists because the daemon passes that flag, and the trust prompt names the
+   * workspace the operator configured on the lane. A lane is there to answer
+   * without a person at the keyboard, and neither gate is persisted -- the
+   * channel warning is asked again on every start -- so a session left to ask
+   * blocks on its first turn, every time.
+   *
+   * Nothing else is answered here. Anything the CLI asks that is not one of
+   * these two stays on screen and shows up as `awaiting-input`, which is the
+   * state that exists to send a person to the session.
+   */
+  async #confirmStartupGates(tmux: string): Promise<void> {
+    const gates = [
+      /--dangerously-load-development-channels is for local channel development/,
+      /Is this a project you created or one you trust\?/,
+    ];
+    const answered = new Set<number>();
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && answered.size < gates.length) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const captured = Bun.spawnSync([tmux, "capture-pane", "-p", "-t", this.tmuxSession], {
+        stdout: "pipe",
+        stderr: "ignore",
+      });
+      if (captured.exitCode !== 0) return;
+      const pane = captured.stdout.toString("utf8");
+      // The selection cursor has to be on screen too: the warning text alone
+      // also appears in the banner after the prompt is gone, and answering
+      // then would send a stray keystroke into the session's input.
+      if (!/^\s*\u276f\s*1\.\s/m.test(pane)) continue;
+      const index = gates.findIndex((gate, position) => !answered.has(position) && gate.test(pane));
+      if (index === -1) continue;
+      answered.add(index);
+      Bun.spawnSync([tmux, "send-keys", "-t", this.tmuxSession, "1", "Enter"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+    }
   }
 
   /**

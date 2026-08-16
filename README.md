@@ -81,9 +81,19 @@ TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 
 agent-mesh attach <lane-id>
 ```
 
-Claude는 새 workspace에서 사람 답변을 **세 번** 요구합니다 — workspace 신뢰, development channel 경고, 그리고 첫 `reply` MCP tool 호출. 답하기 전까지 turn은 진행되지 않습니다.
+Claude lane은 **무인으로 기동합니다.** 새 workspace에서 CLI가 요구하던 세 번의 사람 답변을 데몬이 처리합니다.
 
-이 대기는 상태로 구분됩니다. 해당 lane의 runtime 상태가 `running`이 아니라 **`awaiting-input`**이 되고 화면에 뜬 질문이 함께 표시되므로, 느린 turn과 헷갈리지 않습니다. 판정은 tmux pane에서 선택 커서(`❯ 1.`)를 읽어서 하며 — MCP 쪽으로는 대기 중 아무 신호도 오지 않기 때문에 — 시간으로 추측하지 않습니다.
+| 게이트 | 처리 |
+|---|---|
+| workspace 신뢰 | 데몬이 tmux pane에 확인 키를 보냄 |
+| development channel 경고 | 같음. 매 기동마다 다시 물으므로 저장으로는 해결 안 됨 |
+| `reply` MCP tool 권한 | `--allowedTools`로 lane의 네 tool을 미리 허용 |
+
+앞의 둘은 lane 설정의 결과지 나중에 붙는 사람이 내릴 결정이 아닙니다 — 경고는 데몬이 그 플래그를 넘겨서 뜨고, 신뢰 프롬프트는 운영자가 lane에 지정한 workspace를 묻습니다. **이 둘 외에는 아무것도 자동 응답하지 않습니다.** 다른 질문이 뜨면 화면에 남고 `awaiting-input` 상태로 사람을 부릅니다.
+
+inbound mesh 메시지는 세션에 **자동으로 밀려 들어갑니다**. 그러려면 MCP 서버가 두 곳에 있어야 합니다 — `--mcp-config`가 서버를 실제로 띄우고(프로젝트 `.mcp.json` 단독은 승인 게이트에 걸려 무인 기동에서 안 뜹니다), workspace의 `.mcp.json`은 `--dangerously-load-development-channels server:agent-mesh`의 이름 해석에 쓰입니다. 채널 이름은 프로젝트 registry에서 찾지 `--mcp-config`가 넘긴 서버에서 찾지 않습니다. 파일이 없으면 tool 호출은 되는데 채널이 안 붙어서, 답장이 와도 화면에 안 뜨고 사람이 세션에 물어봐야 합니다.
+
+사람 개입이 필요한 대기는 상태로 구분됩니다. 해당 lane의 runtime 상태가 `running`이 아니라 **`awaiting-input`**이 되고 화면에 뜬 질문이 함께 표시되므로, 느린 turn과 헷갈리지 않습니다. 판정은 tmux pane에서 선택 커서(`❯ 1.`)를 읽어서 하며 — MCP 쪽으로는 대기 중 아무 신호도 오지 않기 때문에 — 시간으로 추측하지 않습니다.
 
 Hub 관리자는 TUI의 전체 Ed25519 fingerprint와 Hub 승인 화면의 값을 대조해 key를 승인해야 합니다. 승인 전에도 로컬 channel 메시지와 첨부는 outbox에 보존되지만 mesh 송신과 Hub 감사 적재는 대기합니다.
 
