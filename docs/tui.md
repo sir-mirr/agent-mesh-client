@@ -63,3 +63,21 @@ agent-mesh up|down|restart|attach|status|logs
 - config 삭제와 secret 삭제를 합치지 않는다.
 - 위험한 runtime policy를 선택한 경우 실행을 몰래 차단하거나 설정을 바꾸지 않고 지속 경고한다.
 - Hub 장애, provider 장애, runtime 장애와 local durability failure를 서로 다른 상태로 표시한다.
+
+## Runtime 세션 조작
+
+`attach`는 runtime 종류에 따라 다른 것을 연다.
+
+| Runtime | attach가 여는 것 |
+|---|---|
+| Claude | tmux의 CLI 세션. 없으면 다시 세운다 |
+| Codex | 데몬이 쓰는 app-server에 붙는 `codex --remote` 관찰자 |
+| Antigravity | redacted 관찰 화면. 상주 세션이 없다 |
+
+Claude 세션이 없을 때 attach는 이어가기와 새로 시작하기를 좌/우 키로 묻는다(`RUN-007`). 기본은 이어가기다 — mesh 상대가 identity로 부르므로 빈 세션은 같은 이름의 낯선 상대가 된다.
+
+비활성 lane은 Hub와 Key를 `not connected` / `not checked`로 표시한다(`UX-006`). `not-configured`와 `unknown`은 설정이 잘못됐을 때의 표현이라, 꺼둔 lane에 쓰면 연결 문제를 찾는 사람이 잘못된 곳을 보게 된다.
+
+enable·disable·remove는 데몬 reload를 수반하므로 진행 표시와 함께 실행한다(`UX-007`). 멈춘 화면은 멈춘 프로그램과 같아 보이고, 그때 누른 키는 다음 화면으로 들어간다.
+
+lane 제거 확인 화면은 Mesh identity가 Hub에 남는다는 것과, 이 호스트의 키가 있는 한 다시 추가할 수 있다는 것을 결정 전에 보인다(`UX-008`).

@@ -172,6 +172,7 @@ AGENT_MESH_E2E_READY_FILE=/tmp/mesh-ready.json bun run test:e2e:live
 - [`CLIENT_NOTES.md`](./CLIENT_NOTES.md) — 클라이언트 구현 노트 (규범 계약은 platform 저장소의 `SPEC.md`)
 - [`docs/architecture.md`](./docs/architecture.md) — 프로세스와 데이터 경로
 - [`docs/local-channel-protocol.md`](./docs/local-channel-protocol.md) — Driver RPC
+- [`docs/control-plane.md`](./docs/control-plane.md) — 데몬 제어 소켓 메서드
 - [`docs/outbox.md`](./docs/outbox.md) — 내구성·재시도·용량 정책
 - [`docs/acceptance-tests.md`](./docs/acceptance-tests.md) — 수용 기준과 검증 상태
 - [`TUI_DESIGN.md`](./TUI_DESIGN.md) — TUI 화면·운영 계약

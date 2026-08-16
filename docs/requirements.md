@@ -30,6 +30,19 @@
 | `AGY-002` | MUST | Antigravity turn timeout은 1800초이며 audit upload와 독립적이어야 한다. |
 | `AGY-003` | MUST | Antigravity는 고정 turn 수로 conversation을 reset하면 안 된다. |
 | `AGY-004` | MUST | Antigravity 보안 정책은 설치 사용자가 lane별로 선택하고 적용 상태를 확인할 수 있어야 한다. |
+| `RUN-001` | MUST | Claude lane은 사람 입력 없이 기동해야 한다. CLI가 요구하는 첫 실행 게이트 — workspace 신뢰, development channel 경고, channel tool 권한 — 를 데몬이 처리해야 하며, 그 셋 외의 질문에는 응답하면 안 된다. |
+| `RUN-002` | MUST | 데몬은 development channel 경고와 workspace 신뢰 프롬프트에만 tmux 키 입력으로 응답해야 한다. 판정은 선택 커서가 화면에 있을 때만 하며, 경과 시간으로 추측하면 안 된다. |
+| `RUN-003` | MUST | channel tool 권한은 기동 인자로 미리 허용해야 한다. lane이 첫 회신에서 권한 대화상자에 막히면 안 된다. |
+| `RUN-004` | MUST | inbound mesh 메시지는 runtime 세션에 자동으로 전달되어야 한다. 세션이 조회해야만 보이는 상태를 전달로 취급하면 안 된다. |
+| `RUN-005` | MUST | 데몬이 Claude runtime을 재기동할 때(부팅, config reload, 재활성) 이전 대화를 이어야 한다. 운영자가 명시적으로 새 세션을 고른 경우에만 비워야 한다. |
+| `RUN-006` | MUST | runtime 기동 대기는 세션이 더 이상 입력을 요구하지 않는 시점에 끝나야 한다. 고정 시간 대기로 대체하면 안 된다. |
+| `RUN-007` | SHOULD | runtime 세션이 종료된 lane에서 attach는 세션을 다시 세울 수 있어야 하며, 이전 대화 이어가기와 새로 시작하기를 키보드로 고르게 해야 한다. |
+| `RUN-008` | MUST | 사람 입력을 기다리는 runtime은 `awaiting-input`으로 구분되고 화면의 질문을 함께 보고해야 한다. 진행 중인 turn과 같은 상태로 표시하면 안 된다. |
+| `OBS-001` | SHOULD | 상주 세션이 없는 runtime은 redacted 관찰 화면을 제공해야 한다. 본문·reasoning·auth code는 데몬 밖으로 내보내면 안 되고 크기만 보고해야 한다. |
+| `OBS-002` | SHOULD | 데몬이 구동하는 Codex app-server에 운영자가 같은 세션으로 붙을 수 있어야 한다. |
+| `UX-006` | MUST | 비활성 lane의 Hub·Key 상태를 미설정이나 불명으로 표시하면 안 된다. 연결하지 않은 상태와 잘못 설정된 상태는 구분되어야 한다. |
+| `UX-007` | MUST | 데몬 reload를 수반하는 TUI 동작은 진행 표시를 보여야 한다. 화면이 멈춘 채로 두면 안 된다. |
+| `UX-008` | MUST | lane 제거는 Mesh identity가 Hub에 남는다는 것과, 이 호스트의 키가 있는 한 다시 추가할 수 있다는 것을 결정 전에 알려야 한다. |
 | `SEC-001` | MUST | provider token과 identity private key를 감사 payload·일반 로그·진단 export에서 제거해야 한다. |
 | `SEC-002` | MUST | lane identity는 Ed25519 key와 Hub 승인 상태를 사용해야 한다. |
 | `SEC-003` | MUST | 신규 lane은 Mesh 전체 identity 중복을 사전 조회하고 원자적 create-only 등록을 사용해 기존·삭제 identity와 key를 변경하면 안 된다. |
