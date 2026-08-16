@@ -101,26 +101,49 @@ TUI의 모든 동작에는 대응하는 비대화형 명령이 있습니다. `--
 | `agent-mesh attach` | lane의 세션을 엽니다 — CLI, 그 위의 뷰어, 또는 큐 화면 | `agent-mesh attach writer` |
 | `agent-mesh runtime observe` | redacted 큐 화면. 상태와 글자 수만 | `agent-mesh runtime observe --lane writer` |
 
-### 옵션
+### 명령별 옵션
 
-| 옵션 | 쓰는 곳 | 뜻 |
-|---|---|---|
-| `--lane ID` | 대부분의 명령 | 대상 lane |
-| `--identity NAME` | `lane add` | Mesh identity. 생략하면 lane id |
-| `--runtime KIND` | `lane add` | `claude`, `codex`, `antigravity` |
-| `--workspace PATH` | `lane add` | agent가 작업할 디렉터리 |
-| `--security-profile P` | `lane add` | `sandboxed`, `workspace`(기본), `unrestricted` |
-| `--acknowledge-risk` | `lane add` | `unrestricted` 저장에 필수 |
-| `--model NAME` | `lane add` | runtime 기본 모델을 덮습니다 |
-| `--agent-type TYPE` | `lane add` | `--runtime`에서 유도된 type을 덮습니다 |
-| `--provider NAME` | `channel add` | v0.1은 `discord` |
-| `--token-file PATH` | `channel add` | 한 번 읽어 lane secret으로 보관합니다 |
-| `--account-ref REF` | `channel add` | 이 driver가 대변하는 provider 계정 |
-| `--to ID` · `--content TEXT` | `mesh send` | 수신 identity와 본문 |
-| `--reply-to ID` | `mesh send` | 다른 메시지에 대한 답으로 표시합니다 |
-| `--client-message-id ID` | `mesh send` | 멱등 키. 같은 값 재전송은 두 번째 메시지가 아닙니다 |
-| `--event-id ID` | `outbox replay` | 지정한 것만 replay. 반복 가능하며 생략하면 전부 |
-| `--config` · `--state-dir` · `--runtime-dir` | 모든 명령 | 기본 경로를 덮습니다 |
+옵션을 받는 명령은 아래가 전부입니다. 나머지는 위치 인자만 씁니다.
+
+```text
+agent-mesh lane add <lane-id>
+  --runtime KIND           claude | codex | antigravity          (기본: claude)
+  --workspace PATH         agent가 작업할 디렉터리                (기본: 현재 디렉터리)
+  --identity NAME          Mesh identity                         (기본: lane id)
+  --security-profile P     sandboxed | workspace | unrestricted  (기본: workspace)
+  --acknowledge-risk       unrestricted 저장에 필수
+  --model NAME             runtime 기본 모델을 덮습니다
+  --agent-type TYPE        --runtime에서 유도된 type을 덮습니다
+
+agent-mesh channel add <channel-id>
+  --lane ID                이 driver가 붙을 lane                  (필수)
+  --provider NAME          v0.1은 discord                        (기본: discord)
+  --token-file PATH        한 번 읽어 lane secret으로 보관        (discord 필수)
+  --account-ref REF        이 driver가 대변하는 provider 계정
+
+agent-mesh channel list | enable | disable | remove
+  --lane ID                driver가 속한 lane                     (필수)
+
+agent-mesh mesh send
+  --lane ID                보내는 주체가 될 identity              (필수)
+  --to ID                  수신 identity                          (필수)
+  --content TEXT           본문                                   (필수)
+  --reply-to ID            다른 메시지에 대한 답으로 표시합니다
+  --client-message-id ID   멱등 키. 재전송은 두 번째 메시지가 아닙니다
+
+agent-mesh mesh agents | mesh inbox | outbox status | runtime observe
+  --lane ID                                                       (필수)
+
+agent-mesh outbox replay
+  --lane ID                                                       (필수)
+  --event-id ID            이것만 replay. 반복 가능하며 생략하면 전부
+```
+
+경로 덮어쓰기는 모든 명령에 적용됩니다:
+
+```text
+--config FILE        --state-dir DIR        --runtime-dir DIR        --secret-dir DIR
+```
 
 `attach`의 tmux 세션 이름은 `mesh-lane-<identity>`입니다. 보안 profile은 `sandboxed`, `workspace`(기본), `unrestricted`이고 마지막은 `--acknowledge-risk` 없이는 거부됩니다. TUI는 적용된 profile을 표시하며 조용히 바꾸지 않습니다.
 

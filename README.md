@@ -101,26 +101,49 @@ Every TUI action has a non-interactive equivalent. `--config`, `--state-dir` and
 | `agent-mesh attach` | opens the lane's session — the CLI, a viewer on it, or the queue | `agent-mesh attach writer` |
 | `agent-mesh runtime observe` | redacted queue view: states and sizes, never bodies | `agent-mesh runtime observe --lane writer` |
 
-### Options
+### Options, by command
 
-| Option | Used by | Meaning |
-|---|---|---|
-| `--lane ID` | most commands | which lane to act on |
-| `--identity NAME` | `lane add` | the Mesh identity; defaults to the lane id |
-| `--runtime KIND` | `lane add` | `claude`, `codex` or `antigravity` |
-| `--workspace PATH` | `lane add` | the directory the agent works in |
-| `--security-profile P` | `lane add` | `sandboxed`, `workspace` (default) or `unrestricted` |
-| `--acknowledge-risk` | `lane add` | required to save `unrestricted` |
-| `--model NAME` | `lane add` | overrides the runtime's default model |
-| `--agent-type TYPE` | `lane add` | overrides the type derived from `--runtime` |
-| `--provider NAME` | `channel add` | `discord` in v0.1 |
-| `--token-file PATH` | `channel add` | read once and stored as a lane secret |
-| `--account-ref REF` | `channel add` | which provider account this driver speaks as |
-| `--to ID` · `--content TEXT` | `mesh send` | recipient identity and message body |
-| `--reply-to ID` | `mesh send` | marks the message as answering another |
-| `--client-message-id ID` | `mesh send` | idempotency key; resending it is not a second message |
-| `--event-id ID` | `outbox replay` | replay only these; repeatable. Omit for all |
-| `--config` · `--state-dir` · `--runtime-dir` | any | override the default locations |
+Only these commands take options. Everything else is positional.
+
+```text
+agent-mesh lane add <lane-id>
+  --runtime KIND           claude | codex | antigravity          (default: claude)
+  --workspace PATH         directory the agent works in          (default: current directory)
+  --identity NAME          Mesh identity                         (default: the lane id)
+  --security-profile P     sandboxed | workspace | unrestricted  (default: workspace)
+  --acknowledge-risk       required to save unrestricted
+  --model NAME             override the runtime's default model
+  --agent-type TYPE        override the type derived from --runtime
+
+agent-mesh channel add <channel-id>
+  --lane ID                the lane this driver feeds            (required)
+  --provider NAME          discord in v0.1                       (default: discord)
+  --token-file PATH        read once, stored as a lane secret    (required for discord)
+  --account-ref REF        which provider account it speaks as
+
+agent-mesh channel list | enable | disable | remove
+  --lane ID                the lane the driver belongs to        (required)
+
+agent-mesh mesh send
+  --lane ID                the identity to send as               (required)
+  --to ID                  recipient identity                    (required)
+  --content TEXT           message body                          (required)
+  --reply-to ID            marks it as answering another message
+  --client-message-id ID   idempotency key; resending is not a second message
+
+agent-mesh mesh agents | mesh inbox | outbox status | runtime observe
+  --lane ID                                                      (required)
+
+agent-mesh outbox replay
+  --lane ID                                                      (required)
+  --event-id ID            replay only this one; repeatable. Omit for every dead letter
+```
+
+Path overrides apply to any command:
+
+```text
+--config FILE        --state-dir DIR        --runtime-dir DIR        --secret-dir DIR
+```
 
 `attach` names its tmux session `mesh-lane-<identity>`. Security profiles are `sandboxed`, `workspace` (default) and `unrestricted`; the last is refused without `--acknowledge-risk`. The TUI shows the profile in effect and never changes it silently.
 
