@@ -28,8 +28,24 @@
 | `AT-020` | `UX-001`, `UX-002` | YAML/UDS/port 수동 편집 없이 TUI와 동등 CLI로 첫 lane을 생성·기동한다. |
 | `AT-021` | `DIST-001` | Bun/Node/npm이 없는 지원 OS에서 release binary와 installer로 설치·doctor를 완료한다. |
 | `AT-022` | `SEC-003` | 등록된 Identity takeover를 `IDENTITY_EXISTS`로 거부하고 원 key set이 불변이며, 동일 persisted key를 가진 daemon restart만 재연결한다. |
-| `AT-023` | `UX-003`, `UX-004`, `UX-005` | Agent 0개에서도 빈 Overview와 `+ Add Agent`부터 표시하고, Agent 목록을 직접 탐색하며, Esc/빈 Backspace로 복귀하고, Channel이 없을 때 적용 불가능한 action을 표시하지 않는다. |
+| `AT-023` | `UX-003`, `UX-004`, `UX-005` | Agent 0개에서도 빈 Overview와 `+ Add Agent`부터 표시하고, Agent 목록을 직접 탐색하며, Esc로 복귀하고, Channel이 없을 때 적용 불가능한 action을 표시하지 않는다. |
 | `AT-024` | `OPS-004` | 축소된 launchd/systemd 환경에서도 명시적 service PATH로 tmux와 선택 Runtime CLI를 발견한다. |
+| `AT-025` | `RUN-001`, `RUN-002`, `RUN-003` | 신뢰·승인 상태가 없는 workspace에서 lane을 기동하면 프롬프트가 화면에 남지 않고, MCP 서버가 뜨며, 첫 회신이 권한 대화상자에 막히지 않는다. |
+| `AT-026` | `RUN-004` | 상대 lane이 보낸 mesh 메시지가 Claude 세션 화면에 자동으로 나타나고, 세션에 조회를 요청하지 않아도 회신이 나간다. |
+| `AT-027` | `RUN-005` | `/exit` 후 disable·enable을 거쳐도 재기동된 세션이 이전 대화를 잇는다. |
+| `AT-028` | `RUN-006` | 게이트가 하나만 나타나는 workspace에서도 기동이 고정 대기 없이 끝난다. |
+| `AT-029` | `RUN-007` | 세션이 없는 Claude lane에서 attach가 이어가기/새로 시작을 묻고, 고른 대로 세션을 세운 뒤 붙는다. |
+| `AT-030` | `RUN-008` | 승인 대기 중인 runtime이 `awaiting-input`과 화면의 질문을 보고하고, 응답 후 `running`으로 돌아온다. |
+| `AT-031` | `OBS-001` | Antigravity lane의 관찰 화면이 turn 상태와 글자 수만 보이고 본문을 보이지 않는다. |
+| `AT-032` | `OBS-002` | Codex lane에 attach하면 데몬이 돌리는 thread가 열리고, 그 뒤 도착한 mesh turn과 응답이 관찰 화면에 나타난다. |
+| `AT-033` | `UX-006`, `UX-007` | 비활성 lane이 Hub·Key를 미설정/불명으로 표시하지 않고, enable·disable·remove가 진행 표시와 함께 끝난다. |
+| `AT-034` | `UX-008`, `SEC-003` | lane 제거 확인 화면이 identity 잔존과 재추가 조건을 알리고, 같은 키를 가진 호스트에서 재추가가 승인 없이 복구된다. |
+| `AT-040` | `SEC-004` | 등록된 identity를 다른 runtime으로 되찾으려 하면 등록된 type을 알리며 거부하고, 맞는 runtime으로는 되찾아진다. |
+| `AT-039` | `OBS-004` | Antigravity lane에 attach하면 lane이 쓰던 대화가 이력과 함께 열리고, 열린 채로 도착한 turn도 저장돼 다시 열었을 때 보인다. |
+| `AT-038` | `RUN-009` | Codex/Antigravity lane이 turn 대기 중 `queued`, 처리 중 `running`, 없을 때 `idle`을 보고한다. |
+| `AT-037` | `OBS-003`, `RUN-005` | Codex lane을 disable 후 enable하면 mesh 트래픽 없이도 attach되고, 열린 대화가 이전 대화이며, 이후 도착한 turn이 같은 화면에 나타난다. |
+| `AT-036` | `UX-009`, `UX-010` | 세 runtime 모두 TUI와 CLI에서 같은 방식으로 attach되고, 세션 이름이 `mesh-lane-<identity>`이며, 점유된 이름에는 붙지 않고 오류를 보인다. |
+| `AT-035` | `AUD-002` | dead-letter된 event를 `outbox replay`로 다시 큐에 넣으면 첨부 확인 여부에 따라 blob 단계부터 또는 append부터 재개하고, ACKED가 아닌 event만 대상이 된다. |
 
 ## 실행된 검증
 

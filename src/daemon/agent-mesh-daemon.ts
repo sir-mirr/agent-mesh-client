@@ -1,5 +1,6 @@
 import type { JsonRpcRequest } from "../channel-rpc/json-rpc";
 import { ConfigStore } from "../config/store";
+import { appServerSocketPath } from "../config/paths";
 import type { AgentMeshConfig, LaneConfig } from "../config/types";
 import { LaneController } from "../lane/lane-controller";
 import { LaneHubConnection } from "../hub/lane-hub-connection";
@@ -17,6 +18,27 @@ export interface AgentMeshDaemonOptions {
   runtimeDirectory: string;
   secretDirectory: string;
   onDiagnostic?: (message: string, error?: unknown) => void;
+}
+
+/**
+ * What a runtime with no resident process is doing, read from its queue.
+ *
+ * `running` has to be reachable: a lane mid-turn previously reported `idle`,
+ * because the state was derived from the first PENDING turn and claiming one
+ * clears that. Idle then covered both "nothing to do" and "working", which
+ * are the two things an operator is trying to tell apart.
+ */
+function turnDrivenRuntimeState(
+  controller: LaneController | undefined,
+  // Reported so an operator can attach before the lane has handled anything:
+  // warm-up holds a conversation open, and without surfacing it the only way
+  // to find one was to look at turns that do not exist yet.
+  threadId?: string | null,
+): { state: string; threadId?: string } {
+  const counts = controller?.runtimeInbox.countsByState() ?? {};
+  const state =
+    (counts.RUNNING ?? 0) > 0 ? "running" : (counts.PENDING ?? 0) > 0 ? "queued" : "idle";
+  return threadId ? { state, threadId } : { state };
 }
 
 export class AgentMeshDaemon {
@@ -171,6 +193,12 @@ export class AgentMeshDaemon {
     const adapter = createRuntimeAdapter(
       controller.config.runtime,
       this.#onDiagnostic,
+      // Codex only: the app-server listens on this path so `agent-mesh attach`
+      // can point a `codex --remote` TUI at the session the daemon is driving.
+      controller.config.runtime.kind === "codex"
+        ? appServerSocketPath(this.#runtimeDirectory, controller.config.id)
+        : undefined,
+      controller.runtimeInbox.latestConversationId(),
     );
     const worker = new RuntimeWorker({
       laneId: controller.config.id,
@@ -184,7 +212,15 @@ export class AgentMeshDaemon {
     worker.start();
   }
 
-  async #startClaudeSupervisor(controller: LaneController): Promise<void> {
+  /**
+   * @param resume defaults to continuing the previous conversation. Every
+   *   caller here is the daemon restoring a lane -- boot, config reload,
+   *   re-enable -- and none of those are a decision to forget. A mesh peer
+   *   addresses this agent by identity, so a lane that comes back empty is a
+   *   stranger answering to the name it was talking to. Only `runtime.start`
+   *   passes false, and only because an operator asked for a clean session.
+   */
+  async #startClaudeSupervisor(controller: LaneController, resume = true): Promise<void> {
     if (controller.config.runtime.kind !== "claude") return;
     const supervisor = new ClaudeSupervisor({
       lane: controller.config,
@@ -194,7 +230,7 @@ export class AgentMeshDaemon {
       secretDirectory: this.#secretDirectory,
     });
     this.#claudeSupervisors.set(controller.config.id, supervisor);
-    await supervisor.start().catch((error) =>
+    await supervisor.start(resume).catch((error) =>
       this.#onDiagnostic(
         `Claude runtime did not start for lane ${controller.config.id}`,
         error,
@@ -421,11 +457,23 @@ export class AgentMeshDaemon {
                 ? await controller.outbox.summary()
                 : { pending: 0, retry: 0, deadLetter: 0, warning: false },
               hub: this.#hubConnections.get(lane.id)?.status ?? null,
+              // Claude reports through its supervisor because a CLI in tmux
+              // has states a queue does not -- stopped, awaiting-input. The
+              // others have no resident process, so what they are doing is
+              // what their turns are doing.
               runtime_status: !lane.enabled
                 ? { state: "disabled" }
-                : this.#claudeSupervisors.get(lane.id)?.status ?? {
-                    state: controller?.runtimeInbox.next() ? "queued" : "idle",
-                  },
+                : this.#claudeSupervisors.get(lane.id)?.status ??
+                  turnDrivenRuntimeState(
+                    controller,
+                    // The adapter's own answer first: Codex holds a thread
+                    // open whether or not a turn has run. Antigravity holds
+                    // nothing between turns, so its conversation is whatever
+                    // the last one used.
+                    this.#runtimeWorkers.get(lane.id)?.options.adapter.sessionThreadId?.() ??
+                      controller?.runtimeInbox.latestConversationId() ??
+                      null,
+                  ),
               channels: lane.channels.map((channel) => ({
                 id: channel.id,
                 provider: channel.provider,
@@ -443,6 +491,33 @@ export class AgentMeshDaemon {
         const controller = this.#controllers.get(params.lane_id);
         if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
         return await controller.outbox.summary();
+      }
+      case "outbox.replay": {
+        const params = request.params as
+          | { lane_id?: unknown; event_ids?: unknown }
+          | undefined;
+        if (typeof params?.lane_id !== "string") throw new Error("lane_id is required");
+        const controller = this.#controllers.get(params.lane_id);
+        if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
+        const eventIds = params.event_ids;
+        if (
+          eventIds !== undefined &&
+          (!Array.isArray(eventIds) || eventIds.some((id) => typeof id !== "string"))
+        ) {
+          throw new Error("event_ids must be an array of strings");
+        }
+        const result = controller.outbox.replayDeadLetters(eventIds as string[] | undefined);
+        // The worker sleeps a second between empty passes; without this the
+        // replayed events sit until that timer expires even though the queue
+        // already has them.
+        this.#hubConnections.get(params.lane_id)?.auditWorker.poke();
+        return {
+          lane_id: params.lane_id,
+          replayed: result.replayed.length,
+          skipped: result.skipped.length,
+          event_ids: result.replayed,
+          outbox: await controller.outbox.summary(),
+        };
       }
       case "hub.status":
         return [...this.#hubConnections.entries()].map(([laneId, connection]) => ({
@@ -500,6 +575,59 @@ export class AgentMeshDaemon {
             ? Math.max(1, Math.min(500, params.limit))
             : 50;
         return controller.runtimeInbox.list(limit);
+      }
+      case "runtime.start": {
+        const params = request.params as
+          | { lane_id?: unknown; resume?: unknown }
+          | undefined;
+        if (typeof params?.lane_id !== "string") throw new Error("lane_id is required");
+        const controller = this.#controllers.get(params.lane_id);
+        if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
+        if (controller.config.runtime.kind !== "claude") {
+          throw new Error("Only Claude lanes hold a session that can be restarted");
+        }
+        // A session someone exited is gone, not stopped: tmux keeps nothing to
+        // reattach to. Rebuilding it is what "attach" has to mean at that
+        // point, and the caller decides whether the CLI continues its previous
+        // conversation or starts an empty one.
+        const existing = this.#claudeSupervisors.get(params.lane_id);
+        if (existing) await existing.stop();
+        this.#claudeSupervisors.delete(params.lane_id);
+        await this.#startClaudeSupervisor(controller, params.resume === true);
+        return {
+          lane_id: params.lane_id,
+          runtime: this.#claudeSupervisors.get(params.lane_id)?.status ?? null,
+        };
+      }
+      case "runtime.observe": {
+        const params = request.params as { lane_id?: unknown; limit?: unknown } | undefined;
+        if (typeof params?.lane_id !== "string") throw new Error("lane_id is required");
+        const controller = this.#controllers.get(params.lane_id);
+        if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
+        const limit =
+          typeof params.limit === "number" && Number.isSafeInteger(params.limit)
+            ? Math.max(1, Math.min(200, params.limit))
+            : 20;
+        // Redacted here rather than in the renderer. An observer is watched by
+        // whoever can see the terminal, and prompt bodies, model output and
+        // auth codes are exactly what must not be on that screen -- so they
+        // never leave the daemon, and a bug in the renderer cannot leak them.
+        return {
+          lane_id: params.lane_id,
+          runtime: controller.config.runtime.kind,
+          workspace: controller.config.runtime.workspace,
+          turns: controller.runtimeInbox.list(limit).map((turn) => ({
+            turn_id: turn.turnId,
+            source_kind: turn.sourceKind,
+            from: typeof turn.correlation.from === "string" ? turn.correlation.from : null,
+            state: turn.state,
+            prompt_chars: turn.content.length,
+            response_chars: turn.response?.length ?? null,
+            error_code: turn.errorCode,
+            created_at: turn.createdAt,
+            updated_at: turn.updatedAt,
+          })),
+        };
       }
       case "runtime.claim": {
         const params = request.params as { lane_id?: unknown } | undefined;

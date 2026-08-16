@@ -1,5 +1,6 @@
 import { createConnection, type Socket } from "node:net";
 import { laneSocketPath } from "../config/paths";
+import { CHANNEL_ERROR_CODES } from "../constants";
 import { encodeFrame, NdjsonDecoder } from "../channel-rpc/ndjson";
 import { prefixedId } from "../util/ids";
 
@@ -135,7 +136,7 @@ export class ChannelDriverClient {
           jsonrpc: "2.0",
           id: frame.id,
           error: {
-            code: -32046,
+            code: CHANNEL_ERROR_CODES.PROVIDER_FAILED,
             message: error instanceof Error ? error.message : String(error),
             data: { code: "CHANNEL_PROVIDER_FAILED", retryable: true },
           },

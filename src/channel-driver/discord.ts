@@ -249,11 +249,11 @@ export class DiscordDriver {
       const ready = payload.d as { user?: { id?: unknown } };
       if (typeof ready.user?.id === "string") this.#botId = ready.user.id;
     } else if (payload.t === "MESSAGE_CREATE") {
-      await this.#message(payload.d as DiscordMessage);
+      await this.#handleMessage(payload.d as DiscordMessage);
     }
   }
 
-  async #message(message: DiscordMessage): Promise<void> {
+  async #handleMessage(message: DiscordMessage): Promise<void> {
     if (!message?.id || !message.channel_id || message.author?.bot) return;
     if (this.#botId && message.author.id === this.#botId) return;
     if (this.#allowedGuilds.size && (!message.guild_id || !this.#allowedGuilds.has(message.guild_id))) {

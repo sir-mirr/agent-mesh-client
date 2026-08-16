@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { CHANNEL_ERROR_CODES } from "../src/constants";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
 import { join } from "node:path";
@@ -100,7 +101,7 @@ describe("LaneServer", () => {
       method: "channel.message.received",
       params: {},
     });
-    expect("error" in response && response.error.code).toBe(-32040);
+    expect("error" in response && response.error.code).toBe(CHANNEL_ERROR_CODES.NOT_REGISTERED);
     expect("error" in response && response.error.data?.code).toBe(
       "CHANNEL_NOT_REGISTERED",
     );
@@ -166,7 +167,7 @@ describe("LaneServer", () => {
       method: "channel.message.received",
       params: { driver_instance_id: "discord-main-1", attachments: [] },
     });
-    expect("error" in response && response.error.code).toBe(-32044);
+    expect("error" in response && response.error.code).toBe(CHANNEL_ERROR_CODES.DURABILITY_FAILED);
     expect("error" in response && response.error.data?.retryable).toBe(true);
   });
 
@@ -194,7 +195,7 @@ describe("LaneServer", () => {
         attachments: [{ filename: "x", base64: "eA==" }],
       },
     });
-    expect("error" in response && response.error.code).toBe(-32043);
+    expect("error" in response && response.error.code).toBe(CHANNEL_ERROR_CODES.ATTACHMENT_INVALID);
     expect(handlerCalled).toBe(false);
   });
 

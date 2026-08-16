@@ -21,11 +21,25 @@ interface PersistedIdentityKey {
   public_key: string;
   private_key_pkcs8: string;
   created_at: string;
+  /**
+   * The type this identity was registered under.
+   *
+   * Kept beside the key because the two are reclaimed together: a host that
+   * still holds the key can add the agent back, and the Hub will not change
+   * the type it already has. Without this, adding it back as a different
+   * runtime writes a local config that disagrees with the registration, and
+   * the audit trail then describes an agent that is not the one running.
+   *
+   * Absent on keys written before this was recorded.
+   */
+  agent_type?: string;
 }
 
 export interface IdentityKeyInfo {
   publicKey: string;
   fingerprint: string;
+  /** The registered type, when this host recorded it at provision time. */
+  agentType?: string;
   createdAt: string;
 }
 
@@ -39,6 +53,30 @@ export class IdentityKeyManager {
     readonly secrets: SecretStore,
   ) {
     this.#secretName = `${laneStorageName(identity)}.ed25519.json`;
+  }
+
+  /**
+   * The stored key, or null when this identity has none here.
+   *
+   * Separate from `ensure` because a caller asking "do we already hold this
+   * identity's key?" must not create one by asking. `lane add` uses it to tell
+   * an identity it can reclaim from one that belongs to somebody else, and
+   * generating a key there would make every answer "not ours".
+   */
+  async peek(): Promise<IdentityKeyInfo | null> {
+    try {
+      const record = JSON.parse(await this.secrets.get(this.#secretName)) as PersistedIdentityKey;
+      this.#validateRecord(record);
+      return {
+        publicKey: record.public_key,
+        fingerprint: keyFingerprint(record.public_key),
+        ...(record.agent_type ? { agentType: record.agent_type } : {}),
+        createdAt: record.created_at,
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
   }
 
   async ensure(): Promise<IdentityKeyInfo> {
@@ -68,8 +106,21 @@ export class IdentityKeyManager {
     return {
       publicKey: this.#record.public_key,
       fingerprint: keyFingerprint(this.#record.public_key),
+      ...(this.#record.agent_type ? { agentType: this.#record.agent_type } : {}),
       createdAt: this.#record.created_at,
     };
+  }
+
+  /**
+   * Remember the type this identity was registered under.
+   *
+   * Written after the Hub accepted the registration, so it records what the
+   * Hub has rather than what was asked for.
+   */
+  async rememberAgentType(agentType: string): Promise<void> {
+    if (!this.#record || this.#record.agent_type === agentType) return;
+    this.#record = { ...this.#record, agent_type: agentType };
+    await this.secrets.set(this.#secretName, JSON.stringify(this.#record));
   }
 
   async signRequest(

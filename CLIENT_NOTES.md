@@ -1,23 +1,31 @@
-# Agent Mesh Client v0.1 개발 스펙
+# Agent Mesh Client v0.1 구현 노트
 
-> 상태: **Frozen / v0.1 구현 완료 후보**
+> 상태: **v0.1 구현 완료 후보의 클라이언트 측 결정 기록**
 >
-> 최종 갱신: 2026-08-15
+> 최종 갱신: 2026-08-16
 >
 > 대상 저장소: [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client)
 >
 > Hub contract: [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts)
 
-## 1. 문서 효력
+## 규범 문서가 아니다
 
-이 문서는 Agent Mesh Client v0.1의 동결된 규범 스펙이다. `MUST`, `SHOULD`, `MAY`는 각각 필수, 권장, 선택 요건을 뜻한다.
+**규범 계약은 `sir-mirr/agent-mesh-platform`의 `SPEC.md` 하나다.** 어느 저장소에서든 — 코드 주석, 커밋 메시지, 에이전트 간 서신 — `§ N.N` 참조는 그 문서의 절을 가리킨다.
+
+이 파일은 그 계약을 이 클라이언트가 어떻게 구현하는지에 대한 노트이고 아무도 구속하지 않는다. 2026-08-16까지 이 파일은 `SPEC.md`라는 이름이었고 자기 절 번호를 갖고 있었다. 그래서 양쪽 에이전트가 같은 `§ 9`, `§ 10.1`을 서로 다른 문서에서 읽으면서 각자 자기 문서와 일치하는 구현을 만들었고, 통합 테스트는 계속 통과했다. 이름을 바꾸고 절 번호를 없앤 것은 그 참조가 두 곳을 가리킬 수 없게 하기 위해서다.
+
+여기 적힌 규칙 중 규범이어야 하는 것은 platform SPEC으로 올린다. 클라이언트 구현 사정인 것만 여기 남는다.
+
+## 문서 효력
+
+`MUST`, `SHOULD`, `MAY`는 각각 필수, 권장, 선택 요건을 뜻한다.
 
 - Client 내부 설계가 다른 로컬 문서와 충돌하면 이 문서가 우선한다.
-- Hub wire contract는 고정된 `@agent-mesh/contracts` Git tag와 해당 Hub SPEC이 우선한다.
+- Hub wire contract는 고정된 `@agent-mesh/contracts` Git tag와 platform SPEC이 우선한다.
 - [`docs/open-questions.md`](./docs/open-questions.md)에 v0.1 결정과 후속 항목을 기록한다.
 - 사용자가 2026-08-15 개발 착수를 명시적으로 승인했으며, 구현은 이 스펙의 확정 항목부터 진행한다.
 
-## 2. v0.1 범위
+## v0.1 범위
 
 v0.1은 다음을 포함한다.
 
@@ -32,7 +40,7 @@ v0.1은 다음을 포함한다.
 
 v0.1에서 Slack/Telegram provider 구현, Windows, chunk/resumable Blob upload, GUI와 Hub 서버 구현은 범위 밖이다.
 
-## 3. 확정된 아키텍처
+## 확정된 아키텍처
 
 ```mermaid
 flowchart LR
@@ -55,7 +63,7 @@ flowchart LR
 
 세부 책임은 [`docs/architecture.md`](./docs/architecture.md)를 따른다.
 
-## 4. Host Daemon과 프로세스 수명주기
+## Host Daemon과 프로세스 수명주기
 
 - 한 호스트에는 `agent-meshd` process가 정확히 하나만 실행되어야 한다.
 - Linux는 `systemd --user`, macOS는 `launchd` user agent로 daemon을 관리해야 한다.
@@ -67,7 +75,7 @@ flowchart LR
 
 결정 근거는 [`docs/adr/0002-single-daemon-user-service.md`](./docs/adr/0002-single-daemon-user-service.md)에 기록한다.
 
-## 5. Lane과 로컬 Channel RPC
+## Lane과 로컬 Channel RPC
 
 - lane마다 독립된 UDS를 사용하고 사용자가 TCP port를 할당하지 않게 해야 한다.
 - transport는 JSON-RPC 2.0 over NDJSON이어야 한다.
@@ -78,9 +86,10 @@ flowchart LR
 - `driver_instance_id`는 삭제 후 재사용하면 안 된다.
 - 세부 method, envelope, ACK와 오류는 [`docs/local-channel-protocol.md`](./docs/local-channel-protocol.md)를 따른다.
 
-## 6. 감사와 첨부파일
+## 감사와 첨부파일
 
 - 모든 channel inbound/outbound 본문과 첨부파일 원본을 감사 대상으로 삼아야 한다.
+- mesh 메시지는 감사 적재 대상이 아니다. Hub가 실제 데이터 경로라 Hub 자신이 기록하며, adapter가 같이 올리면 같은 봉투가 두 번 기록된다.
 - 첨부 bytes의 lowercase SHA-256과 정규화된 extension으로 Blob을 식별해야 한다.
 - 같은 SHA-256과 extension은 중복 업로드하지 않아야 한다.
 - 파일당 최대 `100 MiB`, event당 최대 32개 및 합계 `256 MiB`를 적용해야 한다.
@@ -92,7 +101,7 @@ flowchart LR
 
 상태 전이는 [`docs/outbox.md`](./docs/outbox.md), Hub wire는 [`HUB_AUDIT_INTERFACE_PROPOSAL.md`](./HUB_AUDIT_INTERFACE_PROPOSAL.md)를 따른다.
 
-## 7. Runtime 공통 계약
+## Runtime 공통 계약
 
 Lane Controller가 channel normalization, Hub connection, audit outbox, queue와 immutable reply correlation을 소유한다. Runtime별 transport는 Agent CLI 연결 차이만 소유한다.
 
@@ -109,7 +118,7 @@ Lane Controller가 channel normalization, Hub connection, audit outbox, queue와
 - thought, hidden reasoning, credential과 내부 secret path를 channel·감사 payload·일반 로그에 노출하지 않는다.
 - runtime transport가 재시작되어도 lane outbox와 channel registry를 가능한 한 유지한다.
 
-## 8. Antigravity 확정 정책
+## Antigravity 확정 정책
 
 - 기본 turn timeout은 `30분`(`1800초`)이다.
 - Hub Blob upload timeout `180초`와 별도 상태 머신으로 취급한다.
@@ -120,21 +129,21 @@ Lane Controller가 channel normalization, Hub connection, audit outbox, queue와
 - sandbox, workspace 격리, permission mode와 인증 방식은 설치 사용자가 lane별로 선택한다.
 - TUI/CLI는 선택된 보안 정책, 실제 적용 여부와 위험도를 표시해야 하며 사용자 선택을 조용히 변경하면 안 된다.
 
-## 9. Hub contract와 identity
+## Hub contract와 identity
 
 - Contract는 공개 `sir-mirr/agent-mesh-contracts`의 immutable Git tag로 소비한다.
 - npm registry publish는 v0.1의 전제가 아니다.
 - 구현을 시작할 때는 TypeBox runtime schema, Draft 2020-12 JSON artifact와 language-neutral fixture가 포함된 tag를 고정해야 한다.
 - lane identity는 Ed25519 key를 사용하고 private key는 lane별 secret으로 분리한다.
 - Hub의 동적 `agent_types` registry를 사용하며 Client가 누락된 type을 임의 생성하거나 다른 type으로 fallback하면 안 된다.
-- Antigravity 등 vendor-neutral CLI adapter는 Hub 운영자가 `ai-cli-adapter(requires_key=1)`를 provision한 뒤 사용한다.
+- Antigravity lane은 Hub 운영자가 `ai-antigravity(requires_key=1)`를 provision한 뒤 사용한다. type은 붙은 runtime을 가리키며 모델 벤더를 가리키지 않는다 — `agy`가 내부에서 어느 모델에 닿는지는 이 배포가 관측하는 사실이 아니다.
 - Lane Controller는 승인된 자기 lane identity로만 `mesh.send`해야 하며 `from` override로 channel 사용자나 다른 참여자를 대리하면 안 된다.
 - `mesh.message.from`은 주장된 작성자, `sent_by`는 Hub가 기록한 실제 송신 identity로 취급해야 하며 신뢰 판단에 `from`만 사용하면 안 된다.
 - `mesh.list_agents`의 `type=human` 항목은 runtime이 아닌 mesh 참여자다. TUI는 이를 offline agent로 오인해 표시하면 안 되며 v0.1은 client-side type 구분을 사용한다.
 
 호환 기준과 release gate는 [`docs/contract-compatibility.md`](./docs/contract-compatibility.md)를 따른다.
 
-## 10. 설치와 운영 UX
+## 설치와 운영 UX
 
 - 최종 사용자는 Bun, Node.js 또는 npm을 설치하지 않고 standalone `agent-mesh` binary를 사용할 수 있어야 한다.
 - 선택한 Agent CLI와 대화형 runtime에 필요한 tmux는 사용자가 설치하거나 설치 TUI의 안내를 따라야 한다.
@@ -146,7 +155,7 @@ Lane Controller가 channel normalization, Hub connection, audit outbox, queue와
 
 상세 UX는 [`docs/tui.md`](./docs/tui.md)와 [`TUI_DESIGN.md`](./TUI_DESIGN.md)를 따른다.
 
-## 11. 수용과 동결 조건
+## 수용과 동결 조건
 
 - 기능 수용 기준은 [`docs/acceptance-tests.md`](./docs/acceptance-tests.md)의 모든 `MUST` 시나리오로 추적한다.
 - v0.1 BLOCKING 항목은 모두 결정됐으며 변경은 별도 revision으로 기록한다.

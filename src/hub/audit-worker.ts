@@ -1,9 +1,9 @@
 import {
   AUDIT_SCHEMA_VERSION,
-  ERROR_CLASS,
   MESH_ERROR,
   deriveBlobKey,
-  type ErrorClass,
+  errorClass,
+  errorDataCode,
   type AuditAttachmentRef,
   type PrepareBlobsResult,
 } from "@agent-mesh/contracts";
@@ -12,13 +12,17 @@ import type { LaneOutbox } from "../outbox/lane-outbox";
 import type { StoredAuditEvent } from "../outbox/types";
 import { HubRpcError, type MeshClient } from "./mesh-client";
 
-// Hub d8f1d9d introduced this permanent catch-all after contracts v0.7.0 was
-// tagged. Keep the compatibility value local until the next immutable
-// contracts tag exposes it as MESH_ERROR.AUDIT_APPEND_FAILED.
-const AUDIT_APPEND_FAILED = -32000;
-
-export function classifyAuditRpcError(code: number): ErrorClass {
-  return ERROR_CLASS[code] ?? (code === AUDIT_APPEND_FAILED ? "permanent" : "transient");
+/**
+ * What to record for an operator, as opposed to what to do about it.
+ *
+ * The number decides the retry policy and several conditions share one: a
+ * `-32000` is an unclassified audit refusal, a dispatcher guard, or a failed
+ * persist, and "-32000" in a dead-letter row distinguishes none of them.
+ * `data.code` is the discriminator, so prefer it and keep the number for
+ * responses that carry no vocabulary.
+ */
+export function auditErrorCode(error: HubRpcError): string {
+  return errorDataCode(error) ?? String(error.code);
 }
 
 interface RawAttachment {
@@ -141,13 +145,18 @@ export class AuditWorker {
     } catch (error) {
       const rpcError = error instanceof HubRpcError ? error : null;
       const httpError = error instanceof AuditHttpError ? error : null;
+      // `"transient"` for an unrecognised code, stated here rather than left to
+      // the table: this path has an outbox behind it. A wrong retry is capped
+      // by the backoff ceiling and visible as a rising attempt count, while a
+      // wrong dead-letter needs an operator to undo. Paths with nothing to
+      // drain later — connect, send — must pass `"permanent"` instead.
       const classification = rpcError
-        ? classifyAuditRpcError(rpcError.code)
+        ? errorClass(rpcError.code, "transient")
         : httpError?.permanent
           ? "permanent"
           : "transient";
       const errorCode = rpcError
-        ? String(rpcError.code)
+        ? auditErrorCode(rpcError)
         : httpError
           ? `HTTP_${httpError.status}`
           : "NETWORK_OR_TIMEOUT";

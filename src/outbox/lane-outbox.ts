@@ -392,6 +392,66 @@ export class LaneOutbox {
     this.#transition(eventId, "DEAD_LETTER", "PENDING_APPEND", 0, errorCode, true);
   }
 
+  listDeadLetters(limit = 100): StoredAuditEvent[] {
+    return this.#db()
+      .query<EventRow, [number]>(
+        `SELECT * FROM events WHERE state = 'DEAD_LETTER'
+         ORDER BY updated_at ASC LIMIT ?`,
+      )
+      .all(limit)
+      .map(mapEvent);
+  }
+
+  /**
+   * Return dead-lettered events to the queue.
+   *
+   * Dead-lettering quarantines rather than deletes, but quarantine is only
+   * half of what SPEC § 8.9.3 asks for if nothing can let the event out again.
+   * A version skew is the case that needs this: a code the running client has
+   * never seen is classified by the default its call site chose, and when that
+   * default guesses wrong the events it stopped are correct and appendable.
+   *
+   * `attemptCount` is left alone. It is the record of how hard this event has
+   * already been tried, and resetting it would hide a payload that fails on
+   * every replay. `lastErrorCode` is kept for the same reason: an operator
+   * watching the queue drain needs to see what stopped each row.
+   */
+  replayDeadLetters(eventIds?: readonly string[]): {
+    replayed: string[];
+    skipped: string[];
+  } {
+    const db = this.#db();
+    const candidates =
+      eventIds === undefined
+        ? this.listDeadLetters(Number.MAX_SAFE_INTEGER).map((event) => event.eventId)
+        : eventIds;
+    const replayed: string[] = [];
+    const skipped: string[] = [];
+    const now = Date.now();
+    for (const eventId of candidates) {
+      const row = db
+        .query<EventRow, [string]>("SELECT * FROM events WHERE event_id = ?")
+        .get(eventId);
+      // Anything not dead-lettered is either already moving or already acked.
+      // Dragging it backwards would re-send an event the Hub has accepted.
+      if (!row || row.state !== "DEAD_LETTER") {
+        skipped.push(eventId);
+        continue;
+      }
+      // Resume before the blob phase whenever an attachment is unconfirmed:
+      // `mesh.audit.prepare_blobs` reports the ones the Hub already holds, so
+      // re-running it costs a round-trip, while skipping it on an unuploaded
+      // blob fails the append with AUDIT_MISSING_BLOBS.
+      const resumeState = this.blobsConfirmed(mapEvent(row)) ? "PENDING_APPEND" : "PENDING_BLOBS";
+      db.query(
+        `UPDATE events SET state = ?, resume_state = ?, next_attempt_at = 0,
+         updated_at = ? WHERE event_id = ? AND state = 'DEAD_LETTER'`,
+      ).run(resumeState, resumeState, now, eventId);
+      replayed.push(eventId);
+    }
+    return { replayed, skipped };
+  }
+
   #transition(
     eventId: string,
     state: AuditEventState,

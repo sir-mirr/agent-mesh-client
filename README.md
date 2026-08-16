@@ -27,8 +27,49 @@ agent-mesh
 | Runtime | 필요한 외부 도구 | 연결 방식 |
 |---|---|---|
 | Claude | `claude`, `tmux` | stdio MCP development channel + tmux |
-| Codex | `codex` | 공식 `codex app-server --listen stdio://` |
+| Codex | `codex` (공식 installer) | 공식 `codex app-server --listen stdio://` |
 | Antigravity | `agy` | turn마다 `agy --print --output-format json` |
+
+### Codex 세션 관찰
+
+Codex lane의 app-server는 lane마다 unix socket에 붙습니다.
+
+```
+codex app-server --listen unix://<runtime-dir>/codex-<lane>.sock
+```
+
+`agent-mesh attach <lane-id>`는 그 socket에 `codex --remote unix://<path> --no-alt-screen` TUI를 tmux로 띄웁니다. 데몬과 관찰자가 **같은 app-server**를 공유하므로 계정·설정·MCP 서버가 하나입니다. 세션이 없으면 attach가 만들고, 있으면 붙습니다.
+
+이 경로는 Homebrew cask와 공식 installer 어느 쪽에서도 동작합니다 — `--listen unix://`와 `--remote`는 두 설치 모두에 있습니다. 공식 installer의 standalone 경로(`~/.codex/packages/standalone/current/`)가 필요한 것은 `codex app-server daemon` 계열뿐이고, 이 클라이언트는 그것을 쓰지 않습니다. 두 설치가 공존하면 PATH 순서가 어느 바이너리를 쓸지 결정하므로 `agent-mesh doctor`로 확인하십시오.
+
+관찰자는 **데몬이 돌리는 thread에 붙습니다.** `codex --remote unix://<path> resume <thread-id>`로 열기 때문에, 데몬이 처리하는 mesh turn과 모델 응답이 그 화면에 실시간으로 나타납니다. app-server가 세션 본체이고 TUI는 뷰어라 여러 클라이언트가 같은 thread에 동시에 붙을 수 있습니다.
+
+thread id는 lane의 turn 기록에서 가져옵니다. 서버의 `thread/loaded/list`에는 뷰어가 종료된 thread도 rollout 없이 남아 있어서, 그것을 resume하면 실패하고 pane이 같이 죽습니다. 데몬이 마지막으로 처리한 대화가 무엇인지는 데몬만 압니다.
+
+app-server의 unix transport는 stdio와 프로토콜이 다릅니다 — `/rpc`의 WebSocket이고 NDJSON이 아닙니다. 직접 붙을 일이 있다면 [`src/runtime/ws-unix-client.ts`](./src/runtime/ws-unix-client.ts)를 보십시오.
+
+### Antigravity 세션 관찰
+
+Antigravity는 turn마다 `agy --print` child를 한 번 실행하고 상주 프로세스를 두지 않습니다. 붙을 CLI가 없으므로 `agent-mesh attach <lane-id>`는 **redacted observer**를 tmux에 띄웁니다.
+
+```
+agent-mesh runtime observe --lane ID     # attach가 내부적으로 쓰는 것과 같은 화면
+```
+
+```
+◆ AGENT MESH · observer · mesh-antigravity
+antigravity runtime · ~/work/ai/mesh-agents/antigravity · 16:51:39
+────────────────────────────────────────────────────────────────────────────
+  TIME      STATE       FROM            IN    OUT   AGE    TURN
+  16:51:14  COMPLETED   mesh-claude       31    46    17s  01a00655-b0c
+  16:26:57  OBSERVED    mesh-codex        36     -  24m42s  01a0063f-761
+```
+
+**본문은 표시하지 않습니다.** `IN`/`OUT`은 프롬프트와 응답의 글자 수입니다. redaction은 렌더러가 아니라 데몬(`runtime.observe`)에서 일어나므로 본문·reasoning·auth code는 애초에 데몬 밖으로 나오지 않습니다 — 화면을 만드는 쪽에 버그가 있어도 샐 것이 없습니다.
+
+`AGE`는 그 turn이 현재 상태에 머문 시간이라, 멈춘 turn이 눈에 띕니다.
+
+인증 중 임시 PTY(`auth` window)는 아직 구현하지 않았습니다.
 
 ## 첫 실행
 
@@ -42,6 +83,24 @@ TUI가 기본값 없는 Agent Identity, runtime, workspace와 보안 profile을 
 agent-mesh attach <lane-id>
 ```
 
+Claude lane은 **무인으로 기동합니다.** 새 workspace에서 CLI가 요구하던 세 번의 사람 답변을 데몬이 처리합니다.
+
+| 게이트 | 처리 |
+|---|---|
+| workspace 신뢰 | 데몬이 tmux pane에 확인 키를 보냄 |
+| development channel 경고 | 같음. 매 기동마다 다시 물으므로 저장으로는 해결 안 됨 |
+| `reply` MCP tool 권한 | `--allowedTools`로 lane의 네 tool을 미리 허용 |
+
+앞의 둘은 lane 설정의 결과지 나중에 붙는 사람이 내릴 결정이 아닙니다 — 경고는 데몬이 그 플래그를 넘겨서 뜨고, 신뢰 프롬프트는 운영자가 lane에 지정한 workspace를 묻습니다. **이 둘 외에는 아무것도 자동 응답하지 않습니다.** 다른 질문이 뜨면 화면에 남고 `awaiting-input` 상태로 사람을 부릅니다.
+
+inbound mesh 메시지는 세션에 **자동으로 밀려 들어갑니다**. 그러려면 MCP 서버가 두 곳에 있어야 합니다 — `--mcp-config`가 서버를 실제로 띄우고(프로젝트 `.mcp.json` 단독은 승인 게이트에 걸려 무인 기동에서 안 뜹니다), workspace의 `.mcp.json`은 `--dangerously-load-development-channels server:agent-mesh`의 이름 해석에 쓰입니다. 채널 이름은 프로젝트 registry에서 찾지 `--mcp-config`가 넘긴 서버에서 찾지 않습니다. 파일이 없으면 tool 호출은 되는데 채널이 안 붙어서, 답장이 와도 화면에 안 뜨고 사람이 세션에 물어봐야 합니다.
+
+CLI에서 `/exit`하면 tmux 세션이 사라집니다. 그 상태에서 `attach`는 붙을 것이 없다고 답하는 대신 **세션을 다시 세웁니다** — 이전 대화를 이어갈지(`--continue`) 새로 시작할지 좌/우 키로 고르고, 기동 동안 진행 표시가 나옵니다. mesh 상대는 identity로 부르므로 재시작 뒤 기본값은 같은 대화를 잇는 쪽입니다.
+
+사람 개입이 필요한 대기는 상태로 구분됩니다. 해당 lane의 runtime 상태가 `running`이 아니라 **`awaiting-input`**이 되고 화면에 뜬 질문이 함께 표시되므로, 느린 turn과 헷갈리지 않습니다. 판정은 tmux pane에서 선택 커서(`❯ 1.`)를 읽어서 하며 — MCP 쪽으로는 대기 중 아무 신호도 오지 않기 때문에 — 시간으로 추측하지 않습니다.
+
+이미 등록된 identity를 되찾을 때 agent type은 **Hub의 등록값을 따릅니다.** Hub는 자기가 들고 있는 type을 바꾸지 않으므로, 다른 runtime으로 추가하면 로컬 설정과 등록이 어긋나고 감사 기록이 실제와 다른 agent를 가리키게 됩니다. CLI는 거부하고, TUI는 runtime 선택을 건너뛰고 등록된 값으로 고정합니다.
+
 Hub 관리자는 TUI의 전체 Ed25519 fingerprint와 Hub 승인 화면의 값을 대조해 key를 승인해야 합니다. 승인 전에도 로컬 channel 메시지와 첨부는 outbox에 보존되지만 mesh 송신과 Hub 감사 적재는 대기합니다.
 
 ## 주요 CLI
@@ -54,6 +113,7 @@ agent-mesh lane add|list|enable|disable|remove ...
 agent-mesh channel add|list|enable|disable|remove ...
 agent-mesh mesh send|agents|inbox ...
 agent-mesh outbox status --lane ID
+agent-mesh outbox replay --lane ID [--event-id ID ...]
 agent-mesh attach LANE_ID
 agent-mesh doctor
 ```
@@ -113,11 +173,14 @@ AGENT_MESH_E2E_READY_FILE=/tmp/mesh-ready.json bun run test:e2e:live
 
 ## 문서
 
-- [`SPEC.md`](./SPEC.md) — v0.1 규범 스펙
+- [`CLIENT_NOTES.md`](./CLIENT_NOTES.md) — 클라이언트 구현 노트 (규범 계약은 platform 저장소의 `SPEC.md`)
 - [`docs/architecture.md`](./docs/architecture.md) — 프로세스와 데이터 경로
 - [`docs/local-channel-protocol.md`](./docs/local-channel-protocol.md) — Driver RPC
+- [`docs/control-plane.md`](./docs/control-plane.md) — 데몬 제어 소켓 메서드
 - [`docs/outbox.md`](./docs/outbox.md) — 내구성·재시도·용량 정책
 - [`docs/acceptance-tests.md`](./docs/acceptance-tests.md) — 수용 기준과 검증 상태
 - [`TUI_DESIGN.md`](./TUI_DESIGN.md) — TUI 화면·운영 계약
 
-Wire contract는 공개 저장소 `sir-mirr/agent-mesh-contracts`의 immutable Git tag를 사용합니다. npm registry publish는 필수가 아니며, 현재 client는 `v0.6.0`에 고정돼 있습니다.
+Wire contract는 공개 저장소 `sir-mirr/agent-mesh-contracts`의 immutable Git tag를 사용합니다. npm registry publish는 필수가 아니며, 현재 client는 `v0.7.5`에 고정돼 있습니다. 계약의 소유자는 platform 쪽이며 client는 tag를 고정해 소비만 합니다.
+
+Hub RPC 실패는 숫자 코드로 재시도 정책을, `error.data.code` 문자열로 어떤 조건이었는지를 판정합니다. 하나의 숫자를 여러 조건이 공유하므로 둘 다 필요합니다. 분류되지 않은 코드의 처리는 호출 지점이 정합니다 — outbox가 뒤에 있는 감사 경로는 `errorClass(code, "transient")`, 나중에 비울 것이 없는 connect·send 경로는 `"permanent"`입니다.

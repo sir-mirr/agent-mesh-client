@@ -11,6 +11,8 @@ import { probeHostDaemon, requestControl } from "../daemon/host-daemon";
 import { probeHub, resolveHubEndpoints, type HubEndpoints } from "../hub/endpoints";
 import { lookupAgentIdentity } from "../hub/provisioning";
 import { SecretStore } from "../config/secrets";
+import { IdentityKeyManager } from "../identity/key-manager";
+import { ensureAttachTarget, selfCommand } from "../runtime/attach";
 import { installUserService } from "../service/user-service";
 import { IDENTITY_RE } from "@agent-mesh/contracts";
 
@@ -106,8 +108,9 @@ async function question(
     _input: string | undefined,
     key: { name?: string },
   ) => {
-    const currentLine = (reader as Reader & { line?: string }).line ?? "";
-    if (key.name === "escape" || (key.name === "backspace" && currentLine.length === 0)) {
+    // Escape only. Backspace used to go back on an empty line, which put the
+    // exit one keystroke past deleting the last character someone typed.
+    if (key.name === "escape") {
       controller.abort();
     }
   };
@@ -180,6 +183,11 @@ async function selectGrid<T extends string>(
   initialIndex: number,
   columns: number,
   render: (selectedIndex: number) => void,
+  // The top screen passes false. Esc there has nowhere to go back to, so it
+  // used to leave the TUI -- the same keystroke that means "out of this
+  // screen" everywhere else meant "out of the program" in the one place it
+  // could not be undone. Leaving is the Quit item's job.
+  allowBack = true,
 ): Promise<{ value: T; index: number }> {
   if (!choices[initialIndex]) throw new Error("Grid has no initial choice");
   const stdin = process.stdin;
@@ -204,7 +212,8 @@ async function selectGrid<T extends string>(
       _input: string | undefined,
       key: { name?: string; ctrl?: boolean },
     ) => {
-      if (key.name === "escape" || key.name === "backspace") {
+      if (key.name === "escape") {
+        if (!allowBack) return;
         cleanup();
         process.stdout.write("\n");
         reject(new BackNavigation());
@@ -284,7 +293,7 @@ async function selectHorizontal<T extends string>(
       _input: string | undefined,
       key: { name?: string; ctrl?: boolean },
     ) => {
-      if (key.name === "escape" || key.name === "backspace") {
+      if (key.name === "escape") {
         cleanup();
         process.stdout.write("\n");
         reject(new BackNavigation());
@@ -328,10 +337,10 @@ async function askSecret(reader: Reader, prompt: string, allowBack = false): Pro
   }
 }
 
-function agentType(runtime: RuntimeKind): string {
+function agentTypeFor(runtime: RuntimeKind): string {
   if (runtime === "claude") return "ai-claude";
   if (runtime === "codex") return "ai-codex";
-  return "ai-cli-adapter";
+  return "ai-antigravity";
 }
 
 export function deriveLaneId(
@@ -354,7 +363,8 @@ async function askAgentIdentity(
   reader: Reader,
   existing: readonly LaneConfig[],
   endpoints: HubEndpoints,
-): Promise<string> {
+  secretDirectory: string,
+): Promise<{ identity: string; agentType?: string }> {
   while (true) {
     const identity = await ask(reader, "Agent Identity", undefined, true);
     if (!identity) {
@@ -373,36 +383,81 @@ async function askAgentIdentity(
     }
     process.stdout.write("Checking Agent Identity in Mesh…\n");
     const registered = await lookupAgentIdentity(endpoints, identity);
+    if (registered && !registered.deleted) {
+      // Registered is not the same as taken. Removing an agent leaves the Hub
+      // row alive and its key on this host, so re-adding your own agent has to
+      // be told apart from colliding with somebody else's -- by fingerprint,
+      // since that is the only part only the holder can match.
+      const held = await new IdentityKeyManager(
+        identity,
+        new SecretStore(secretDirectory),
+      ).peek();
+      if (held && registered.keys.some((key) => key.fingerprint === held.fingerprint)) {
+        process.stdout.write(
+          `That Agent Identity is registered to this host's key (${held.fingerprint}).\n` +
+            `Reclaiming it; key is currently ${registered.keyStatus ?? "registered"}.\n`,
+        );
+        // The Hub keeps the type it already has, so the runtime is decided
+        // here rather than asked for again -- picking another would write a
+        // lane that disagrees with its own registration.
+        return { identity, ...(held.agentType ? { agentType: held.agentType } : {}) };
+      }
+    }
     if (registered) {
       const state = registered.deleted
         ? "soft-deleted and permanently reserved"
-        : `already registered${registered.keyStatus ? `; key ${registered.keyStatus}` : ""}`;
+        : `registered to a different key${registered.keyStatus ? `; key ${registered.keyStatus}` : ""}`;
       process.stdout.write(`That Agent Identity is ${state}. Choose another identity.\n`);
       continue;
     }
     process.stdout.write("✓ Agent Identity is available in Mesh.\n");
-    return identity;
+    return { identity };
   }
+}
+
+/** The runtime a registered type belongs to, when this client has one. */
+function runtimeForAgentType(agentType: string): RuntimeKind | null {
+  if (agentType === "ai-claude") return "claude";
+  if (agentType === "ai-codex") return "codex";
+  if (agentType === "ai-antigravity") return "antigravity";
+  return null;
 }
 
 async function createLane(
   reader: Reader,
   endpoints: HubEndpoints,
+  secretDirectory: string,
   existing: readonly LaneConfig[] = [],
 ): Promise<LaneConfig> {
   heading("Add agent");
-  process.stdout.write(`${paint(DIM, "Esc / empty Backspace  Back")}\n\n`);
-  const identity = await askAgentIdentity(reader, existing, endpoints);
-  const id = deriveLaneId(identity, existing.map((lane) => lane.id));
-  const runtime = await selectHorizontal<RuntimeKind>(
+  process.stdout.write(`${paint(DIM, "Esc  Back")}\n\n`);
+  const { identity, agentType } = await askAgentIdentity(
     reader,
-    "CLI Runtime",
-    [
-      { value: "claude", label: "Claude" },
-      { value: "codex", label: "Codex" },
-      { value: "antigravity", label: "AntiGravity" },
-    ],
+    existing,
+    endpoints,
+    secretDirectory,
   );
+  const id = deriveLaneId(identity, existing.map((lane) => lane.id));
+  // A reclaimed identity keeps the type the Hub registered it under, so the
+  // runtime follows from it instead of being offered again. Offering the
+  // choice would let someone pick one the Hub will not honour.
+  const reclaimedRuntime = agentType ? runtimeForAgentType(agentType) : null;
+  if (reclaimedRuntime) {
+    process.stdout.write(
+      `Runtime is fixed to ${reclaimedRuntime} by the registration (${agentType}).\n`,
+    );
+  }
+  const runtime =
+    reclaimedRuntime ??
+    (await selectHorizontal<RuntimeKind>(
+      reader,
+      "CLI Runtime",
+      [
+        { value: "claude", label: "Claude" },
+        { value: "codex", label: "Codex" },
+        { value: "antigravity", label: "AntiGravity" },
+      ],
+    ));
   const workspace = resolve(await ask(reader, "Workspace", process.cwd(), true));
   const profile = await selectHorizontal<RuntimeSecurityConfig["profile"]>(
     reader,
@@ -433,7 +488,7 @@ async function createLane(
   return {
     id,
     identity,
-    agent_type: agentType(runtime),
+    agent_type: agentType ?? agentTypeFor(runtime),
     enabled: true,
     runtime: {
       kind: runtime,
@@ -517,7 +572,15 @@ interface DashboardLane {
     fingerprint?: string;
     lastError: string | null;
   } | null;
-  runtime_status: { state: string; tmuxSession?: string; lastError?: string | null };
+  runtime_status: {
+    state: string;
+    tmuxSession?: string;
+    lastError?: string | null;
+    /** The question a blocked runtime is showing, when it is blocked. */
+    prompt?: string | null;
+    /** The conversation a session-holding runtime has open. */
+    threadId?: string | null;
+  };
   outbox: { pending: number; retry: number; deadLetter: number; warning: boolean };
   channels: Array<{
     id: string;
@@ -527,7 +590,7 @@ interface DashboardLane {
   }>;
 }
 
-type AgentAction = "keys" | "channels" | "attach" | "toggle" | "remove" | "back";
+type AgentAction = "keys" | "channels" | "attach" | "replay" | "toggle" | "remove" | "back";
 
 function stateColor(state: string): string {
   const normalized = state.toLowerCase();
@@ -537,6 +600,9 @@ function stateColor(state: string): string {
   if (["failed", "error", "conflict", "revoked", "dead-letter"].includes(normalized)) {
     return RED;
   }
+  // Not an error: someone has to answer, and the colour should send them
+  // there rather than read as a fault to investigate.
+  if (normalized === "awaiting-input") return YELLOW;
   return YELLOW;
 }
 
@@ -643,7 +709,7 @@ function renderDashboard(
   }
   writePanel(`Agents · ${lanes.length}`, agentLines);
   process.stdout.write(
-    `\n${paint(DIM, "↑ ↓  Select    Enter  Open    Esc / Backspace  Back    Ctrl+C  Exit")}\n`,
+    `\n${paint(DIM, "↑ ↓  Select    Enter  Open    Quit  Leave    Ctrl+C  Force exit")}\n`,
   );
 }
 
@@ -652,6 +718,19 @@ function agentActions(agent: DashboardLane): readonly GridChoice<AgentAction>[] 
     { value: "keys", icon: "◆", label: "Identity Key", description: "Approval and fingerprint" },
     { value: "channels", icon: "#", label: "Channels", description: "Manage channel drivers" },
     { value: "attach", icon: "⌁", label: "Attach Runtime", description: "Open the CLI session" },
+    // Only when there is something to replay. The status panel paints a
+    // dead-letter count red, and an always-present action that usually does
+    // nothing teaches the operator to ignore the one time it matters.
+    ...(agent.outbox.deadLetter > 0
+      ? ([
+          {
+            value: "replay",
+            icon: "↺",
+            label: "Replay Dead Letters",
+            description: `Requeue ${agent.outbox.deadLetter} quarantined event(s)`,
+          },
+        ] as const)
+      : []),
     {
       value: "toggle",
       icon: agent.enabled ? "○" : "●",
@@ -665,15 +744,31 @@ function agentActions(agent: DashboardLane): readonly GridChoice<AgentAction>[] 
 
 function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
   heading(`Agent · ${agent.identity}`, `${agent.runtime.toUpperCase()} CLI runtime`);
-  const hubState = agent.hub?.state ?? "not-configured";
+  // A disabled lane has no Hub connection to report on, and printing
+  // "not-configured" and "unknown" for it describes a broken setup rather than
+  // a switched-off one. Those two words are what an operator checks when
+  // something will not connect, so they have to mean that.
+  const hubState = agent.enabled ? agent.hub?.state ?? "not-configured" : "not connected";
+  const keyState = agent.enabled ? agent.hub?.keyStatus ?? "unknown" : "not checked";
   const runtimeState = agent.runtime_status.state;
   const statusLines = [
     `Status     ${paint(agent.enabled ? GREEN : YELLOW, agent.enabled ? "Enabled" : "Disabled")}`,
-    `Hub        ${paint(stateColor(hubState), hubState)}`,
-    `Key        ${paint(stateColor(agent.hub?.keyStatus ?? "unknown"), agent.hub?.keyStatus ?? "unknown")}`,
+    `Hub        ${paint(agent.enabled ? stateColor(hubState) : DIM, hubState)}`,
+    `Key        ${paint(agent.enabled ? stateColor(keyState) : DIM, keyState)}`,
     `Runtime    ${paint(stateColor(runtimeState), runtimeState)}`,
+    // A blocked runtime is the one case where the operator has to go to the
+    // session rather than wait, so the question is on the screen that says so.
+    ...(runtimeState === "awaiting-input" && agent.runtime_status.prompt
+      ? [`           ${paint(YELLOW, clip(agent.runtime_status.prompt, frameWidth() - 14))}`,
+         paint(DIM, `           agent-mesh attach ${agent.lane_id}`)]
+      : []),
     `Channels   ${agent.channels.length ? agent.channels.map((item) => `${item.id}:${item.status.state}`).join(", ") : "none"}`,
-    `Outbox     ${agent.outbox.pending}/${agent.outbox.retry}/${agent.outbox.deadLetter}`,
+    // Spelled out here rather than the overview's three slashed numbers: this
+    // is the screen where an operator decides whether to act on them.
+    `Outbox     ${agent.outbox.pending} pending · ${agent.outbox.retry} retry · ${paint(
+      agent.outbox.deadLetter > 0 ? RED : DIM,
+      `${agent.outbox.deadLetter} dead-letter`,
+    )}`,
   ];
   const error = agent.hub?.lastError ?? agent.runtime_status.lastError;
   if (error) statusLines.push(paint(RED, `! ${clip(error, frameWidth() - 6)}`));
@@ -699,13 +794,43 @@ function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
   }
   writePanel("Manage agent", actionLines);
   process.stdout.write(
-    `\n${paint(DIM, "↑ ↓ ← →  Navigate    Enter  Select    Esc / Backspace  Back")}\n`,
+    `\n${paint(DIM, "↑ ↓ ← →  Navigate    Enter  Select    Esc  Back")}\n`,
   );
 }
 
-async function attachAgentRuntime(reader: Reader, agent: DashboardLane): Promise<void> {
-  if (!agent.runtime_status.tmuxSession) {
-    process.stdout.write("This agent has no attachable runtime session.\n");
+/**
+ * Runs `work` while the line says something is happening.
+ *
+ * Reloading config or rebuilding a runtime session takes seconds, and without
+ * this the screen simply stops redrawing -- which is what a hung program looks
+ * like, so people press keys, and the keys land in whatever comes next.
+ */
+async function withProgress<T>(label: string, work: () => Promise<T>): Promise<T> {
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let frame = 0;
+  process.stdout.write("\n");
+  const timer = setInterval(() => {
+    process.stdout.write(`\r\u001b[2K${paint(CYAN, frames[frame++ % frames.length]!)} ${label}`);
+  }, 80);
+  try {
+    return await work();
+  } finally {
+    clearInterval(timer);
+    process.stdout.write("\r\u001b[2K");
+  }
+}
+
+async function attachAgentRuntime(
+  reader: Reader,
+  agent: DashboardLane,
+  options: TuiOptions,
+): Promise<void> {
+  const lane = (await new ConfigStore(options.configFile).load()).lanes.find(
+    (item) => item.id === agent.lane_id,
+  );
+  if (!lane) return;
+  if (!agent.enabled) {
+    process.stdout.write("This agent is disabled. Enable it before attaching.\n");
     try {
       await ask(reader, "Press Enter to go back", undefined, true);
     } catch (error) {
@@ -713,13 +838,72 @@ async function attachAgentRuntime(reader: Reader, agent: DashboardLane): Promise
     }
     return;
   }
+
+  // Only Claude keeps a CLI that exiting destroys, so it is the only one with
+  // a session to rebuild -- Codex's session lives on the app-server and
+  // Antigravity has none. Offering to continue a conversation for the other
+  // two would be offering something they do not have.
+  if (lane.runtime.kind === "claude" && !agent.runtime_status.tmuxSession) {
+    heading(`Start runtime · ${agent.identity}`);
+    let choice: "resume" | "fresh";
+    try {
+      choice = await selectHorizontal<"resume" | "fresh">(
+        reader,
+        "Previous conversation",
+        [
+          { value: "resume", label: "Continue" },
+          { value: "fresh", label: "Start fresh" },
+        ],
+      );
+    } catch (error) {
+      if (error instanceof BackNavigation) return;
+      throw error;
+    }
+    await withProgress("Starting the runtime session…", async () => {
+      await requestControl(options.runtimeDirectory, "runtime.start", {
+        lane_id: agent.lane_id,
+        resume: choice === "resume",
+      });
+    });
+    const started = ((await requestControl(options.runtimeDirectory, "lane.list", {})) as
+      DashboardLane[]).find((item) => item.lane_id === agent.lane_id);
+    if (started) agent = started;
+  }
+
+  let session: string;
+  try {
+    session = await withProgress("Opening the session…", async () =>
+      ensureAttachTarget({
+        lane,
+        runtimeDirectory: options.runtimeDirectory,
+        conversationId: agent.runtime_status.threadId,
+        daemonSession: agent.runtime_status.tmuxSession ?? null,
+        selfCommand: selfCommand(),
+      }),
+    );
+  } catch (error) {
+    // The reasons are specific -- a server not listening yet, a name held by
+    // something else -- and they are what the operator needs, so they are
+    // shown rather than turned into "could not attach".
+    writePanel("Cannot attach", [
+      paint(YELLOW, error instanceof Error ? error.message : String(error)),
+    ]);
+    try {
+      await ask(reader, "\nPress Enter to go back", undefined, true);
+    } catch (backError) {
+      if (!(backError instanceof BackNavigation)) throw backError;
+    }
+    return;
+  }
+
   const tmux = Bun.which("tmux");
   if (!tmux) throw new Error("tmux is not available in the TUI environment");
   reader.pause();
-  const child = Bun.spawn(
-    [tmux, "attach-session", "-t", agent.runtime_status.tmuxSession],
-    { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
-  );
+  const child = Bun.spawn([tmux, "attach-session", "-t", session], {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   await child.exited;
   reader.resume();
 }
@@ -769,7 +953,25 @@ async function agentDetail(
     } else if (selection.value === "channels") {
       await channelsScreen(reader, options, agent.lane_id);
     } else if (selection.value === "attach") {
-      await attachAgentRuntime(reader, agent);
+      await attachAgentRuntime(reader, agent, options);
+    } else if (selection.value === "replay") {
+      const result = (await requestControl(options.runtimeDirectory, "outbox.replay", {
+        lane_id: agent.lane_id,
+      })) as { replayed?: number; skipped?: number };
+      heading(`Replay dead letters · ${agent.identity}`);
+      writePanel("Outbox replay", [
+        `Requeued   ${result.replayed ?? 0}`,
+        `Skipped    ${result.skipped ?? 0}`,
+        // Nothing here promises the append will succeed. A payload the Hub
+        // refuses for its own content dead-letters again on the next attempt,
+        // and its attempt count is the thing that says so.
+        paint(DIM, "Requeued events keep their attempt count and last error."),
+      ]);
+      try {
+        await ask(reader, "\nPress Enter to go back", undefined, true);
+      } catch (error) {
+        if (!(error instanceof BackNavigation)) throw error;
+      }
     } else {
       const store = new ConfigStore(options.configFile);
       const config = await store.load();
@@ -778,12 +980,27 @@ async function agentDetail(
       if (selection.value === "toggle") {
         config.lanes[index]!.enabled = !config.lanes[index]!.enabled;
       } else if (selection.value === "remove") {
+        // Local only: the Mesh identity stays registered and live. `lane add`
+        // refuses it afterwards because this tool sends create_only, not
+        // because the Hub forbids it -- re-registering without create_only
+        // returns the identity with its key back to pending. Saying "cannot be
+        // added again" would be the stronger claim and the wrong one, and it
+        // would flatten the difference from an admin teardown, which really is
+        // permanent (§ 9.3 retires that name rather than freeing it).
+        writePanel("Before removing", [
+          `This removes the lane from this host only.`,
+          `Mesh identity ${agent.identity} stays registered and live with the Hub.`,
+          `This host keeps its key, so the same agent can be added here again.`,
+          paint(YELLOW, "Delete that key and the identity becomes unreclaimable here."),
+          paint(DIM, "Permanent loss needs a Hub admin teardown, which this tool"),
+          paint(DIM, "never performs. Durable state, outbox and Blob spool are kept."),
+        ]);
         let confirm: string;
         try {
           confirm = (
             await ask(
               reader,
-              `Remove agent ${agent.identity}? Durable state and outbox will remain (y/N)`,
+              `\nRemove agent ${agent.identity}? (y/N)`,
               "N",
               true,
             )
@@ -796,7 +1013,14 @@ async function agentDetail(
         config.lanes.splice(index, 1);
       }
       await store.save(config);
-      await requestControl(options.runtimeDirectory, "config.reload", {});
+      await withProgress(
+        selection.value === "remove"
+          ? "Removing the agent…"
+          : config.lanes[index]?.enabled
+            ? "Starting the agent…"
+            : "Stopping the agent…",
+        async () => requestControl(options.runtimeDirectory, "config.reload", {}),
+      );
       if (selection.value === "remove") return;
     }
   }
@@ -819,6 +1043,7 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
         selectedIndex,
         1,
         (index) => renderDashboard(agents, daemon, choices, index),
+        false,
       );
     } catch (error) {
       if (error instanceof BackNavigation) return;
@@ -833,7 +1058,7 @@ async function dashboard(reader: Reader, options: TuiOptions): Promise<void> {
       if (!config.hub) throw new Error("Hub must be configured before adding an agent");
       const endpoints = resolveHubEndpoints(config.hub.base_url, config.hub);
       try {
-        config.lanes.push(await createLane(reader, endpoints, config.lanes));
+        config.lanes.push(await createLane(reader, endpoints, options.secretDirectory, config.lanes));
       } catch (error) {
         if (error instanceof BackNavigation) continue;
         throw error;
@@ -869,7 +1094,7 @@ async function channelsScreen(
         `  ${channel.id.padEnd(24)} ${channel.provider.padEnd(12)} ${channel.enabled ? "enabled" : "disabled"}\n`,
       );
     }
-    process.stdout.write(`\n${paint(DIM, "Esc / Backspace  Back")}\n\n`);
+    process.stdout.write(`\n${paint(DIM, "Esc  Back")}\n\n`);
     const actionChoices: HorizontalChoice<ChannelAction>[] = [
       { value: "add", label: "Add Discord" },
       ...(lane.channels.some((channel) => !channel.enabled)

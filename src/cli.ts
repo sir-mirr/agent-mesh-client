@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { basename, resolve } from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { defaultLocations } from "./config/locations";
-import { laneSocketPath, laneStorageName } from "./config/paths";
+import { appServerSocketPath, laneSocketPath, laneStorageName } from "./config/paths";
 import { ConfigStore } from "./config/store";
 import type { LaneConfig, RuntimeKind } from "./config/types";
 import { AgentMeshDaemon } from "./daemon/agent-mesh-daemon";
@@ -13,10 +13,13 @@ import {
 } from "./daemon/host-daemon";
 import { runTui } from "./tui/app";
 import { runClaudeChannelMcp } from "./runtime/claude-channel-mcp";
+import { runRuntimeObserver } from "./runtime/observer";
+import { ensureAttachTarget, selfCommand } from "./runtime/attach";
 import { runDiscordDriver } from "./channel-driver/discord";
 import { resolveHubEndpoints } from "./hub/endpoints";
 import { lookupAgentIdentity } from "./hub/provisioning";
 import { SecretStore } from "./config/secrets";
+import { IdentityKeyManager } from "./identity/key-manager";
 import {
   installUserService,
   restartUserService,
@@ -40,7 +43,9 @@ Usage:
   agent-mesh mesh agents --lane ID
   agent-mesh mesh inbox --lane ID
   agent-mesh outbox status --lane ID
+  agent-mesh outbox replay --lane ID [--event-id ID ...]
   agent-mesh runtime mcp --lane ID
+  agent-mesh runtime observe --lane ID
   agent-mesh attach LANE_ID
   agent-mesh channel add ID --lane ID --provider discord --token-file PATH
   agent-mesh channel list|enable|disable|remove [ID] --lane ID
@@ -82,6 +87,7 @@ const VALUE_OPTIONS = new Set([
   "--provider",
   "--token-file",
   "--account-ref",
+  "--event-id",
 ]);
 const BOOLEAN_OPTIONS = new Set(["--json", "--yes", "--acknowledge-risk"]);
 
@@ -186,10 +192,39 @@ function runtimeKind(options: ParsedOptions): RuntimeKind {
   return value;
 }
 
+/**
+ * The type the Hub already has for an identity, when it can be read.
+ *
+ * `/api/v1/agents/{identity}/keys` does not carry it, so this asks a connected
+ * lane through `mesh.list_agents`. Returns null when nothing is connected --
+ * the first lane on a host has no way to ask, and refusing to add one over a
+ * question that cannot be put would be worse than the mismatch it prevents.
+ */
+async function registeredAgentType(
+  options: ParsedOptions,
+  identity: string,
+): Promise<string | null> {
+  try {
+    const lanes = (await requestControl(options.runtimeDirectory, "lane.list", {})) as Array<{
+      lane_id: string;
+      hub?: { state?: string } | null;
+    }>;
+    const connected = lanes.find((lane) => lane.hub?.state === "connected");
+    if (!connected) return null;
+    const listed = (await requestControl(options.runtimeDirectory, "mesh.list_agents", {
+      lane_id: connected.lane_id,
+    })) as { agents?: Array<{ id?: unknown; type?: unknown }> };
+    const match = listed.agents?.find((agent) => agent.id === identity);
+    return typeof match?.type === "string" ? match.type : null;
+  } catch {
+    return null;
+  }
+}
+
 function defaultAgentType(runtime: RuntimeKind): string {
   if (runtime === "claude") return "ai-claude";
   if (runtime === "codex") return "ai-codex";
-  return "ai-cli-adapter";
+  return "ai-antigravity";
 }
 
 async function mutateConfig(
@@ -268,13 +303,35 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
   if (group === "attach" && command && !value) {
     const tmux = Bun.which("tmux");
     if (!tmux) throw new Error("tmux is not installed");
-    const session = `mesh-${laneStorageName(command)}`;
+    const lane = (await new ConfigStore(options.configFile).load()).lanes.find(
+      (item) => item.id === command || item.identity === command,
+    );
+    if (!lane) throw new Error(`Unknown lane: ${command}`);
+    // From the daemon, which holds the conversation open from lane start.
+    // Reading it off past turns meant a lane that had not answered anything
+    // yet looked like it had nothing to attach to.
+    const lanes = (await requestControl(options.runtimeDirectory, "lane.list", {})) as Array<{
+      lane_id: string;
+      runtime_status?: { threadId?: string | null };
+    }>;
+    const session = await ensureAttachTarget({
+      lane,
+      runtimeDirectory: options.runtimeDirectory,
+      conversationId: lanes.find((item) => item.lane_id === lane.id)?.runtime_status?.threadId,
+      selfCommand: selfCommand(),
+    });
     const child = Bun.spawn([tmux, "attach-session", "-t", session], {
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",
     });
     return await child.exited;
+  }
+  if (group === "runtime" && command === "observe") {
+    const laneId = option(options, "--lane");
+    if (!laneId) throw new Error("runtime observe requires --lane");
+    await runRuntimeObserver({ laneId, runtimeDirectory: options.runtimeDirectory });
+    return 0;
   }
   if (group === "runtime" && command === "mcp") {
     const laneId = option(options, "--lane");
@@ -333,6 +390,7 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     }
     const model = option(options, "--model");
     const identity = option(options, "--identity") ?? value;
+    const agentType = option(options, "--agent-type") ?? defaultAgentType(kind);
     const current = await new ConfigStore(options.configFile).load();
     if (!current.hub) {
       throw new Error("Configure a Hub before adding a lane so Agent Identity can be checked");
@@ -345,14 +403,49 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       identity,
     );
     if (registered) {
-      throw new Error(
-        `Agent Identity already exists in Mesh: ${identity} (${registered.deleted ? "soft-deleted" : registered.keyStatus ?? "registered"})`,
+      if (registered.deleted) {
+        throw new Error(
+          `Agent Identity is permanently reserved after teardown: ${identity}`,
+        );
+      }
+      // A registered identity is not automatically somebody else's. Removing a
+      // lane leaves the Hub row alive and keeps the key on this host, so the
+      // common case of re-adding one's own agent looks identical to a name
+      // collision unless the fingerprints are compared. `peek` never creates a
+      // key -- generating one here would make every answer "not ours".
+      const held = await new IdentityKeyManager(
+        identity,
+        new SecretStore(options.secretDirectory),
+      ).peek();
+      const mine =
+        held !== null &&
+        registered.keys.some((candidate) => candidate.fingerprint === held.fingerprint);
+      if (!mine) {
+        throw new Error(
+          `Agent Identity belongs to a different key: ${identity} (${registered.keyStatus ?? "registered"})`,
+        );
+      }
+      // The Hub will not change the type of an identity it already holds, so
+      // reclaiming one as a different runtime writes a local config that
+      // disagrees with the registration -- and the audit trail then describes
+      // an agent that is not the one running. The registered type wins, and
+      // asking for another is refused rather than silently ignored.
+      const registeredType = held.agentType ?? (await registeredAgentType(options, identity));
+      if (registeredType && registeredType !== agentType) {
+        throw new Error(
+          `Agent Identity ${identity} is registered as ${registeredType}; ` +
+            `this would add it as ${agentType}. Use the matching runtime, or a new identity.`,
+        );
+      }
+      process.stderr.write(
+        `Reclaiming ${identity}: this host holds its key (${held.fingerprint}), ` +
+          `currently ${registered.keyStatus ?? "registered"}.\n`,
       );
     }
     const lane: LaneConfig = {
       id: value,
       identity,
-      agent_type: option(options, "--agent-type") ?? defaultAgentType(kind),
+      agent_type: agentType,
       enabled: true,
       runtime: {
         kind,
@@ -457,14 +550,26 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     (command === "enable" || command === "disable" || command === "remove") &&
     value
   ) {
-    print(
-      await mutateConfig(options, (config) => {
-        const index = config.lanes.findIndex((lane) => lane.id === value);
-        if (index === -1) throw new Error(`Unknown lane: ${value}`);
-        if (command === "remove") config.lanes.splice(index, 1);
-        else config.lanes[index]!.enabled = command === "enable";
-      }),
-    );
+    let removedIdentity: string | null = null;
+    const saved = await mutateConfig(options, (config) => {
+      const index = config.lanes.findIndex((lane) => lane.id === value);
+      if (index === -1) throw new Error(`Unknown lane: ${value}`);
+      if (command === "remove") {
+        removedIdentity = config.lanes[index]!.identity;
+        config.lanes.splice(index, 1);
+      } else config.lanes[index]!.enabled = command === "enable";
+    });
+    print(saved);
+    // Local removal only, and the identity stays live rather than torn down.
+    // `lane add` refuses it because this tool sends create_only; the Hub still
+    // allows an operator to re-register it, with the key back to pending.
+    if (removedIdentity) {
+      process.stderr.write(
+        `Mesh identity ${removedIdentity} remains registered with the Hub. ` +
+          `This host keeps its key, so the same agent can be added here again. ` +
+          `Delete the key and it becomes another host's to claim.\n`,
+      );
+    }
     return 0;
   }
   if (group === "mesh" && command === "send") {
@@ -515,6 +620,21 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     print(
       await requestControl(options.runtimeDirectory, "outbox.summary", {
         lane_id: laneId,
+      }),
+    );
+    return 0;
+  }
+  if (group === "outbox" && command === "replay") {
+    const laneId = option(options, "--lane");
+    if (!laneId) throw new Error("outbox replay requires --lane");
+    // No --event-id means every dead letter in the lane. That is the version
+    // skew case: one wrong classification stops a run of events, and naming
+    // them individually is the wrong shape of work for it.
+    const eventIds = options.values.get("--event-id");
+    print(
+      await requestControl(options.runtimeDirectory, "outbox.replay", {
+        lane_id: laneId,
+        ...(eventIds ? { event_ids: eventIds } : {}),
       }),
     );
     return 0;

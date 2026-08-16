@@ -12,7 +12,7 @@
 >
 > Antigravity Runtime Adapter 설계: [`ANTIGRAVITY_RUNTIME_ADAPTER_DESIGN.md`](./ANTIGRAVITY_RUNTIME_ADAPTER_DESIGN.md)
 >
-> v0.1 규범 스펙 동결 후보: [`SPEC.md`](./SPEC.md)
+> 클라이언트 구현 노트: [`CLIENT_NOTES.md`](./CLIENT_NOTES.md) · 규범 계약: platform 저장소의 `SPEC.md`
 
 ## 1. 문서 목적
 

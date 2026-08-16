@@ -412,8 +412,9 @@ optional tmux session: mesh-antigravity-a
 - 평상시 `agy` 상주 window는 없다.
 - 대기 중 runtime 상태는 `Idle`이며 `Stopped`나 장애가 아니다.
 - 턴 처리 중에만 `Running`과 child PID/경과 시간을 상세 화면에 표시한다.
-- `agent-mesh attach <lane>`는 interactive `agy`가 아니라 redacted observer를 연다.
-- auth window는 인증 완료나 timeout 뒤 credential을 출력하지 않고 정리한다.
+- ~~`agent-mesh attach <lane>`는 interactive `agy`가 아니라 redacted observer를 연다.~~ **번복됨(2026-08-16, 사용자 지시).** attach는 `agy --conversation <id>`로 lane의 대화를 연다. 상주 프로세스가 없다는 전제는 맞았지만 **대화가 남는다**는 것을 이 설계가 놓쳤고, 그래서 붙을 것이 없다고 결론지었다. redacted observer는 없어지지 않고 `agent-mesh runtime observe --lane ID`로 남는다 — 본문을 화면에 두면 안 될 때 쓴다.
+- 동시 접근은 안전하다. interactive 세션이 열린 채로 데몬의 `--print --conversation <id>`가 성공하고 그 turn도 보존된다(실측). 실시간 렌더는 없다 — 두 프로세스가 저장소를 공유할 뿐 서버·클라이언트가 아니다.
+- auth window는 인증 완료나 timeout 뒤 credential을 출력하지 않고 정리한다. **미구현.**
 - observer는 prompt 본문, response 본문, auth URL/code와 reasoning을 기본 표시하지 않는다.
 
 ## 18. 설정 예시
