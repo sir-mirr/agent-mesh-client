@@ -25,10 +25,10 @@ interface PersistedIdentityKey {
    * The type this identity was registered under.
    *
    * Kept beside the key because the two are reclaimed together: a host that
-   * still holds the key can add the agent back, and the Hub will not change
-   * the type it already has. Without this, adding it back as a different
-   * runtime writes a local config that disagrees with the registration, and
-   * the audit trail then describes an agent that is not the one running.
+   * still holds the key can add the agent back. Registration uses
+   * `create_only`, so the Hub keeps the type it has and a mismatch would be
+   * carried locally instead -- naming an agent in this config as something
+   * other than what the Hub, and therefore the audit trail, calls it.
    *
    * Absent on keys written before this was recorded.
    */

@@ -10,6 +10,12 @@ import { IDENTITY_RE } from "@agent-mesh/contracts";
 
 export interface RegisteredAgentIdentity {
   identity: string;
+  /**
+   * The type the Hub has registered, when it reports one.
+   *
+   * Absent on Hubs that predate the field, so callers still need a fallback.
+   */
+  type?: string;
   deleted: boolean;
   keyStatus: string | null;
   keys: Array<{ fingerprint: string; status: string }>;
@@ -72,6 +78,7 @@ export async function lookupAgentIdentity(
   }
   return {
     identity,
+    ...("type" in body && typeof body.type === "string" ? { type: body.type } : {}),
     deleted: body.deleted,
     keyStatus:
       "key_status" in body && typeof body.key_status === "string"

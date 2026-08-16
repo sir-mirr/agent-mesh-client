@@ -397,10 +397,34 @@ async function askAgentIdentity(
           `That Agent Identity is registered to this host's key (${held.fingerprint}).\n` +
             `Reclaiming it; key is currently ${registered.keyStatus ?? "registered"}.\n`,
         );
-        // The Hub keeps the type it already has, so the runtime is decided
-        // here rather than asked for again -- picking another would write a
-        // lane that disagrees with its own registration.
-        return { identity, ...(held.agentType ? { agentType: held.agentType } : {}) };
+        // Shown and confirmed, not applied quietly. Which type is right is
+        // not something the Hub or this client knows -- an identity may be
+        // registered as one runtime because that is what it is, or because
+        // someone once added it wrongly. The person adding it knows.
+        const knownType = registered.type ?? held.agentType;
+        if (knownType) {
+          process.stdout.write(`It is registered as ${knownType}.\n`);
+          let confirm: "keep" | "other";
+          try {
+            confirm = await selectHorizontal<"keep" | "other">(
+              reader,
+              `Add it back as ${knownType}?`,
+              [
+                { value: "keep", label: "Yes, use the registered type" },
+                { value: "other", label: "No, pick another identity" },
+              ],
+            );
+          } catch (error) {
+            if (error instanceof BackNavigation) throw error;
+            throw error;
+          }
+          if (confirm === "other") {
+            process.stdout.write("Choose another identity.\n");
+            continue;
+          }
+          return { identity, agentType: knownType };
+        }
+        return { identity };
       }
     }
     if (registered) {
@@ -438,9 +462,11 @@ async function createLane(
     secretDirectory,
   );
   const id = deriveLaneId(identity, existing.map((lane) => lane.id));
-  // A reclaimed identity keeps the type the Hub registered it under, so the
-  // runtime follows from it instead of being offered again. Offering the
-  // choice would let someone pick one the Hub will not honour.
+  // A reclaimed identity keeps the type it is registered under, confirmed a
+  // step earlier. The runtime follows from it rather than being offered
+  // again: changing it would mean either a lane that disagrees with its
+  // registration, or a Hub-side overwrite that relabels that identity's whole
+  // audit history.
   const reclaimedRuntime = agentType ? runtimeForAgentType(agentType) : null;
   if (reclaimedRuntime) {
     process.stdout.write(

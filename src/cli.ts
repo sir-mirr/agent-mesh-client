@@ -425,12 +425,24 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
           `Agent Identity belongs to a different key: ${identity} (${registered.keyStatus ?? "registered"})`,
         );
       }
-      // The Hub will not change the type of an identity it already holds, so
-      // reclaiming one as a different runtime writes a local config that
-      // disagrees with the registration -- and the audit trail then describes
-      // an agent that is not the one running. The registered type wins, and
-      // asking for another is refused rather than silently ignored.
-      const registeredType = held.agentType ?? (await registeredAgentType(options, identity));
+      // Refused rather than reconciled, in either direction.
+      //
+      // Registering again without `create_only` would make the Hub take the
+      // local type -- SPEC § 10.1's upsert writes it -- and that is the worse
+      // repair: `agents.type` is joined into audit events at display time, so
+      // overwriting it relabels everything that identity has ever done. Work
+      // performed as one runtime would read as another's, and unlike key
+      // transitions, a type change leaves no record that it happened.
+      //
+      // Keeping `create_only` avoids that but leaves the local config
+      // disagreeing with the registration, which misnames the agent here
+      // instead. Neither side knows which one is intended -- only the person
+      // running it does, so this stops and says both.
+      // The Hub's own answer first. `/keys` carries the type on Hubs that have
+      // the field; older ones do not, so the locally recorded type and then a
+      // connected lane's `mesh.list_agents` stand in.
+      const registeredType =
+        registered.type ?? held.agentType ?? (await registeredAgentType(options, identity));
       if (registeredType && registeredType !== agentType) {
         throw new Error(
           `Agent Identity ${identity} is registered as ${registeredType}; ` +

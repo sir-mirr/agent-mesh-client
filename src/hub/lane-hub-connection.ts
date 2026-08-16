@@ -128,7 +128,7 @@ export class LaneHubConnection {
           });
           keyStatus = provisioned.key?.status ?? "legacy-unverified";
           // Beside the key, because the two are reclaimed together and the
-          // Hub will not change a type it already holds.
+          // registration uses create_only, so the Hub keeps this value.
           await this.keyManager.rememberAgentType(this.lane.agent_type);
         }
         this.#status = {
