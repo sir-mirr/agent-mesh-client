@@ -714,12 +714,17 @@ function agentActions(agent: DashboardLane): readonly GridChoice<AgentAction>[] 
 
 function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
   heading(`Agent · ${agent.identity}`, `${agent.runtime.toUpperCase()} CLI runtime`);
-  const hubState = agent.hub?.state ?? "not-configured";
+  // A disabled lane has no Hub connection to report on, and printing
+  // "not-configured" and "unknown" for it describes a broken setup rather than
+  // a switched-off one. Those two words are what an operator checks when
+  // something will not connect, so they have to mean that.
+  const hubState = agent.enabled ? agent.hub?.state ?? "not-configured" : "not connected";
+  const keyState = agent.enabled ? agent.hub?.keyStatus ?? "unknown" : "not checked";
   const runtimeState = agent.runtime_status.state;
   const statusLines = [
     `Status     ${paint(agent.enabled ? GREEN : YELLOW, agent.enabled ? "Enabled" : "Disabled")}`,
-    `Hub        ${paint(stateColor(hubState), hubState)}`,
-    `Key        ${paint(stateColor(agent.hub?.keyStatus ?? "unknown"), agent.hub?.keyStatus ?? "unknown")}`,
+    `Hub        ${paint(agent.enabled ? stateColor(hubState) : DIM, hubState)}`,
+    `Key        ${paint(agent.enabled ? stateColor(keyState) : DIM, keyState)}`,
     `Runtime    ${paint(stateColor(runtimeState), runtimeState)}`,
     // A blocked runtime is the one case where the operator has to go to the
     // session rather than wait, so the question is on the screen that says so.
@@ -763,23 +768,96 @@ function renderAgentDetail(agent: DashboardLane, selectedIndex: number): void {
   );
 }
 
-async function attachAgentRuntime(reader: Reader, agent: DashboardLane): Promise<void> {
+/**
+ * Runs `work` while the line says something is happening.
+ *
+ * Reloading config or rebuilding a runtime session takes seconds, and without
+ * this the screen simply stops redrawing -- which is what a hung program looks
+ * like, so people press keys, and the keys land in whatever comes next.
+ */
+async function withProgress<T>(label: string, work: () => Promise<T>): Promise<T> {
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let frame = 0;
+  process.stdout.write("\n");
+  const timer = setInterval(() => {
+    process.stdout.write(`\r\u001b[2K${paint(CYAN, frames[frame++ % frames.length]!)} ${label}`);
+  }, 80);
+  try {
+    return await work();
+  } finally {
+    clearInterval(timer);
+    process.stdout.write("\r\u001b[2K");
+  }
+}
+
+async function attachAgentRuntime(
+  reader: Reader,
+  agent: DashboardLane,
+  options: TuiOptions,
+): Promise<void> {
   if (!agent.runtime_status.tmuxSession) {
-    process.stdout.write("This agent has no attachable runtime session.\n");
-    try {
-      await ask(reader, "Press Enter to go back", undefined, true);
-    } catch (error) {
-      if (!(error instanceof BackNavigation)) throw error;
+    // Exiting the CLI destroys the tmux session, so there is nothing left to
+    // attach to and the old message ended there -- correct and useless, since
+    // the thing the operator wants is the session back.
+    if (agent.runtime !== "claude" || !agent.enabled) {
+      process.stdout.write(
+        agent.enabled
+          ? "This runtime has no attachable session.\n"
+          : "This agent is disabled. Enable it before attaching.\n",
+      );
+      try {
+        await ask(reader, "Press Enter to go back", undefined, true);
+      } catch (error) {
+        if (!(error instanceof BackNavigation)) throw error;
+      }
+      return;
     }
-    return;
+    heading(`Start runtime · ${agent.identity}`);
+    let resume: "resume" | "fresh";
+    try {
+      resume = await selectHorizontal<"resume" | "fresh">(
+        reader,
+        "Previous conversation",
+        [
+          { value: "resume", label: "Continue" },
+          { value: "fresh", label: "Start fresh" },
+        ],
+      );
+    } catch (error) {
+      if (error instanceof BackNavigation) return;
+      throw error;
+    }
+    await withProgress("Starting the runtime session…", async () => {
+      await requestControl(options.runtimeDirectory, "runtime.start", {
+        lane_id: agent.lane_id,
+        resume: resume === "resume",
+      });
+    });
+    const started = ((await requestControl(options.runtimeDirectory, "lane.list", {})) as
+      DashboardLane[]).find((item) => item.lane_id === agent.lane_id);
+    if (!started?.runtime_status.tmuxSession) {
+      process.stdout.write(
+        `Could not start the session: ${started?.runtime_status.lastError ?? "unknown error"}\n`,
+      );
+      try {
+        await ask(reader, "Press Enter to go back", undefined, true);
+      } catch (error) {
+        if (!(error instanceof BackNavigation)) throw error;
+      }
+      return;
+    }
+    agent = started;
   }
   const tmux = Bun.which("tmux");
   if (!tmux) throw new Error("tmux is not available in the TUI environment");
   reader.pause();
-  const child = Bun.spawn(
-    [tmux, "attach-session", "-t", agent.runtime_status.tmuxSession],
-    { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
-  );
+  const session = agent.runtime_status.tmuxSession;
+  if (!session) throw new Error("Runtime session disappeared before attaching");
+  const child = Bun.spawn([tmux, "attach-session", "-t", session], {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   await child.exited;
   reader.resume();
 }
@@ -829,7 +907,7 @@ async function agentDetail(
     } else if (selection.value === "channels") {
       await channelsScreen(reader, options, agent.lane_id);
     } else if (selection.value === "attach") {
-      await attachAgentRuntime(reader, agent);
+      await attachAgentRuntime(reader, agent, options);
     } else if (selection.value === "replay") {
       const result = (await requestControl(options.runtimeDirectory, "outbox.replay", {
         lane_id: agent.lane_id,
@@ -889,7 +967,14 @@ async function agentDetail(
         config.lanes.splice(index, 1);
       }
       await store.save(config);
-      await requestControl(options.runtimeDirectory, "config.reload", {});
+      await withProgress(
+        selection.value === "remove"
+          ? "Removing the agent…"
+          : config.lanes[index]?.enabled
+            ? "Starting the agent…"
+            : "Stopping the agent…",
+        async () => requestControl(options.runtimeDirectory, "config.reload", {}),
+      );
       if (selection.value === "remove") return;
     }
   }

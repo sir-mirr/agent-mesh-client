@@ -93,6 +93,8 @@ Claude lane은 **무인으로 기동합니다.** 새 workspace에서 CLI가 요�
 
 inbound mesh 메시지는 세션에 **자동으로 밀려 들어갑니다**. 그러려면 MCP 서버가 두 곳에 있어야 합니다 — `--mcp-config`가 서버를 실제로 띄우고(프로젝트 `.mcp.json` 단독은 승인 게이트에 걸려 무인 기동에서 안 뜹니다), workspace의 `.mcp.json`은 `--dangerously-load-development-channels server:agent-mesh`의 이름 해석에 쓰입니다. 채널 이름은 프로젝트 registry에서 찾지 `--mcp-config`가 넘긴 서버에서 찾지 않습니다. 파일이 없으면 tool 호출은 되는데 채널이 안 붙어서, 답장이 와도 화면에 안 뜨고 사람이 세션에 물어봐야 합니다.
 
+CLI에서 `/exit`하면 tmux 세션이 사라집니다. 그 상태에서 `attach`는 붙을 것이 없다고 답하는 대신 **세션을 다시 세웁니다** — 이전 대화를 이어갈지(`--continue`) 새로 시작할지 좌/우 키로 고르고, 기동 동안 진행 표시가 나옵니다. mesh 상대는 identity로 부르므로 재시작 뒤 기본값은 같은 대화를 잇는 쪽입니다.
+
 사람 개입이 필요한 대기는 상태로 구분됩니다. 해당 lane의 runtime 상태가 `running`이 아니라 **`awaiting-input`**이 되고 화면에 뜬 질문이 함께 표시되므로, 느린 turn과 헷갈리지 않습니다. 판정은 tmux pane에서 선택 커서(`❯ 1.`)를 읽어서 하며 — MCP 쪽으로는 대기 중 아무 신호도 오지 않기 때문에 — 시간으로 추측하지 않습니다.
 
 Hub 관리자는 TUI의 전체 Ed25519 fingerprint와 Hub 승인 화면의 값을 대조해 key를 승인해야 합니다. 승인 전에도 로컬 channel 메시지와 첨부는 outbox에 보존되지만 mesh 송신과 Hub 감사 적재는 대기합니다.

@@ -100,7 +100,13 @@ export class ClaudeSupervisor {
     return { ...this.#status };
   }
 
-  async start(): Promise<void> {
+  /**
+   * @param resume continue the CLI's previous conversation in this workspace
+   *   instead of opening an empty one. A mesh agent is interactive and its
+   *   counterpart addresses it by identity, so after a restart the useful
+   *   default is the same thread, not a stranger with the same name.
+   */
+  async start(resume = false): Promise<void> {
     if (this.options.lane.runtime.kind !== "claude") return;
     if (this.#hasSession()) {
       this.#status = { ...this.#status, state: "running", lastError: null };
@@ -161,6 +167,7 @@ export class ClaudeSupervisor {
       "--name",
       `Agent Mesh · ${this.options.lane.id}`,
     ];
+    if (resume) args.push("--continue");
     if (this.options.lane.runtime.model) {
       args.push("--model", this.options.lane.runtime.model);
     }

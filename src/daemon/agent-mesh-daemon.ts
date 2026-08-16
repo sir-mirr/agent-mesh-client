@@ -190,7 +190,7 @@ export class AgentMeshDaemon {
     worker.start();
   }
 
-  async #startClaudeSupervisor(controller: LaneController): Promise<void> {
+  async #startClaudeSupervisor(controller: LaneController, resume = false): Promise<void> {
     if (controller.config.runtime.kind !== "claude") return;
     const supervisor = new ClaudeSupervisor({
       lane: controller.config,
@@ -200,7 +200,7 @@ export class AgentMeshDaemon {
       secretDirectory: this.#secretDirectory,
     });
     this.#claudeSupervisors.set(controller.config.id, supervisor);
-    await supervisor.start().catch((error) =>
+    await supervisor.start(resume).catch((error) =>
       this.#onDiagnostic(
         `Claude runtime did not start for lane ${controller.config.id}`,
         error,
@@ -533,6 +533,29 @@ export class AgentMeshDaemon {
             ? Math.max(1, Math.min(500, params.limit))
             : 50;
         return controller.runtimeInbox.list(limit);
+      }
+      case "runtime.start": {
+        const params = request.params as
+          | { lane_id?: unknown; resume?: unknown }
+          | undefined;
+        if (typeof params?.lane_id !== "string") throw new Error("lane_id is required");
+        const controller = this.#controllers.get(params.lane_id);
+        if (!controller) throw new Error(`Unknown lane: ${params.lane_id}`);
+        if (controller.config.runtime.kind !== "claude") {
+          throw new Error("Only Claude lanes hold a session that can be restarted");
+        }
+        // A session someone exited is gone, not stopped: tmux keeps nothing to
+        // reattach to. Rebuilding it is what "attach" has to mean at that
+        // point, and the caller decides whether the CLI continues its previous
+        // conversation or starts an empty one.
+        const existing = this.#claudeSupervisors.get(params.lane_id);
+        if (existing) await existing.stop();
+        this.#claudeSupervisors.delete(params.lane_id);
+        await this.#startClaudeSupervisor(controller, params.resume === true);
+        return {
+          lane_id: params.lane_id,
+          runtime: this.#claudeSupervisors.get(params.lane_id)?.status ?? null,
+        };
       }
       case "runtime.observe": {
         const params = request.params as { lane_id?: unknown; limit?: unknown } | undefined;
