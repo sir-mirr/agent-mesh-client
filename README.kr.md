@@ -28,7 +28,13 @@ Channel 왕복은 Hub를 우회하므로 Hub 장애가 로컬 응답을 막지 �
 
 세 runtime 모두 lane 기동과 함께 대화를 붙들고 있고 재시작 뒤 이전 대화를 잇습니다. 그래서 attach가 "메시지가 먼저 와야 한다"는 순서에 의존하지 않습니다.
 
-**상태:** `v0.1.0-dev`, macOS·Linux. contracts는 `@agent-mesh/contracts#v0.8.2` 고정이며, 그 계약과 `SPEC.md`의 소유자는 platform 저장소입니다.
+**상태:** `v0.1.0-dev`, macOS·Linux.
+
+| | |
+|---|---|
+| Hub와 규범 `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), `v0.8.2` 고정 |
+| 이 클라이언트 | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---
 
@@ -43,7 +49,19 @@ agent-mesh
 
 installer는 release archive를 `SHA256SUMS`로 검증한 뒤 `~/.local/bin/agent-mesh`에 설치하고 launchd 또는 systemd 사용자 서비스를 등록합니다. `AGENT_MESH_INSTALL_SERVICE=0`이면 서비스 등록을 건너뜁니다. Bun·Node.js·npm은 필요 없습니다.
 
-쓸 runtime CLI만 따로 준비합니다 — `claude`와 `tmux`, `codex`, `agy`.
+### 설치해야 하는 것
+
+`tmux`는 필수입니다 — 세션을 갖는 runtime은 전부 그 안에 삽니다. agent CLI는 runtime별이라 쓸 것만 설치하면 됩니다.
+
+| | 필요한 곳 | 설치 | 검증한 버전 |
+|---|---|---|---|
+| `tmux` | 모든 runtime | `brew install tmux` · `apt install tmux` | 3.6a |
+| `claude` | Claude lane | [Claude Code](https://claude.com/claude-code) | 2.1.116 |
+| `codex` | Codex lane | `brew install --cask codex` 또는 공식 installer | 0.147.0 |
+| `agy` | Antigravity lane | Antigravity CLI | 1.1.13 |
+| `bun` | 소스 빌드할 때만 | [bun.sh](https://bun.sh) | 1.3.13 |
+
+`agent-mesh doctor`가 이 중 무엇을 어디서 찾았는지 알려줍니다.
 
 ### 첫 실행
 
@@ -55,27 +73,29 @@ lane은 무인으로 기동합니다. 데몬이 **자기가 유발한 첫 실행
 
 ### 명령
 
-```text
-agent-mesh                                TUI
-agent-mesh up | down | restart | status | logs
-agent-mesh service install | status | restart | stop | logs | uninstall
-agent-mesh doctor
-agent-mesh config hub set URL | show
-agent-mesh lane add ID --runtime KIND --workspace PATH [--security-profile P]
-agent-mesh lane list | enable | disable | remove [ID]
-agent-mesh channel add ID --lane ID --provider discord --token-file PATH
-agent-mesh channel list | enable | disable | remove [ID] --lane ID
-agent-mesh mesh send --lane ID --to ID --content TEXT
-agent-mesh mesh agents | inbox --lane ID
-agent-mesh outbox status --lane ID
-agent-mesh outbox replay --lane ID [--event-id ID ...]
-agent-mesh attach LANE_ID
-agent-mesh runtime observe --lane ID
-```
+TUI의 모든 동작에는 대응하는 비대화형 명령이 있습니다. `--config`, `--state-dir`, `--runtime-dir`로 기본 경로를 덮을 수 있습니다.
 
-`attach`는 lane의 세션을 엽니다. tmux 세션 이름은 `mesh-lane-<identity>`입니다. `runtime observe`는 redacted 화면 — turn 상태와 글자 수만, 본문은 없음 — 이라 화면을 공유할 때 씁니다.
+| 명령 | 하는 일 | 옵션 | 예시 |
+|---|---|---|---|
+| `agent-mesh` | TUI — lane이 없으면 온보딩, 있으면 운영 화면 | | `agent-mesh` |
+| `up` · `down` · `restart` | 사용자 서비스 설치·기동, 중지, 재기동 | | `agent-mesh up` |
+| `status` · `logs` | 데몬 상태와 lane 소켓, 서비스 로그 경로 | | `agent-mesh status` |
+| `service …` | 같은 서비스 조작에 `uninstall`이 추가된 형태 | `install\|status\|restart\|stop\|logs\|uninstall` | `agent-mesh service uninstall` |
+| `doctor` | config 경로, 데몬 상태, 발견된 runtime CLI 위치 | | `agent-mesh doctor` |
+| `config hub set` · `show` | Hub base URL. RPC·upload endpoint는 discovery로 얻습니다 | | `agent-mesh config hub set http://127.0.0.1:3100` |
+| `lane add` | agent 등록 — identity, runtime, workspace, 보안 profile | `--identity` `--runtime claude\|codex\|antigravity` `--workspace` `--security-profile` `--agent-type` `--model` `--acknowledge-risk` | `agent-mesh lane add writer --runtime claude --workspace ~/work/writer` |
+| `lane list` · `enable` · `disable` · `remove` | 설정된 lane과 상태 | | `agent-mesh lane disable writer` |
+| `channel add` | lane에 channel driver를 붙입니다 | `--lane` `--provider discord` `--token-file` `--account-ref` | `agent-mesh channel add ops --lane writer --provider discord --token-file ~/.secrets/bot` |
+| `channel list` · `enable` · `disable` · `remove` | lane의 driver. 제거한 id는 영구히 재사용하지 않습니다 | `--lane` | `agent-mesh channel disable ops --lane writer` |
+| `mesh send` | 그 lane의 identity로 mesh 메시지를 보냅니다 | `--lane` `--to` `--content` `--reply-to` `--client-message-id` | `agent-mesh mesh send --lane writer --to reviewer --content "준비됐습니다"` |
+| `mesh agents` | Hub가 아는 identity, 접속 상태와 type | `--lane` | `agent-mesh mesh agents --lane writer` |
+| `mesh inbox` | 이 lane의 turn과 상태·응답 | `--lane` | `agent-mesh mesh inbox --lane writer` |
+| `outbox status` | pending·retry·dead-letter·acked 수와 Blob 사용량 | `--lane` | `agent-mesh outbox status --lane writer` |
+| `outbox replay` | dead-letter를 큐로 되돌립니다. 전부 또는 지정한 것만 | `--lane` `--event-id` (반복 가능) | `agent-mesh outbox replay --lane writer` |
+| `attach` | lane의 세션을 엽니다 — CLI, 그 위의 뷰어, 또는 큐 화면 | | `agent-mesh attach writer` |
+| `runtime observe` | redacted 큐 화면. 상태와 글자 수만, 본문 없음 | `--lane` | `agent-mesh runtime observe --lane writer` |
 
-보안 profile은 `sandboxed`, `workspace`(기본), `unrestricted`이고 마지막은 `--acknowledge-risk` 없이는 거부됩니다. TUI는 적용된 profile을 표시하며 조용히 바꾸지 않습니다.
+`attach`의 tmux 세션 이름은 `mesh-lane-<identity>`입니다. 보안 profile은 `sandboxed`, `workspace`(기본), `unrestricted`이고 마지막은 `--acknowledge-risk` 없이는 거부됩니다. TUI는 적용된 profile을 표시하며 조용히 바꾸지 않습니다.
 
 ### 필요해지기 전에 알아둘 것
 

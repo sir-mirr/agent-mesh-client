@@ -28,7 +28,13 @@ Channel round-trips bypass the Hub, so a Hub outage does not stop a local reply.
 
 Each lane holds its conversation open from start and continues the previous one across restarts, so attaching never depends on traffic having arrived first.
 
-**Status:** `v0.1.0-dev`, macOS and Linux. Contracts pinned to `@agent-mesh/contracts#v0.8.2`; the platform repository owns that contract and its `SPEC.md` is normative.
+**Status:** `v0.1.0-dev`, macOS and Linux.
+
+| | |
+|---|---|
+| Hub and normative `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), pinned at `v0.8.2` |
+| This client | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---
 
@@ -43,7 +49,19 @@ agent-mesh
 
 The installer verifies the release archive against `SHA256SUMS`, installs to `~/.local/bin/agent-mesh`, and registers a launchd or systemd user service. `AGENT_MESH_INSTALL_SERVICE=0` skips the service. No Bun, Node or npm required.
 
-Install the runtime CLIs you plan to use: `claude` and `tmux`, `codex`, `agy`.
+### What you need installed
+
+`tmux` is required — every runtime that holds a session lives in one. The agent CLIs are per-runtime: install only the ones you will use.
+
+| | Needed for | Install | Verified with |
+|---|---|---|---|
+| `tmux` | all runtimes | `brew install tmux` · `apt install tmux` | 3.6a |
+| `claude` | Claude lanes | [Claude Code](https://claude.com/claude-code) | 2.1.116 |
+| `codex` | Codex lanes | `brew install --cask codex` or the official installer | 0.147.0 |
+| `agy` | Antigravity lanes | Antigravity CLI | 1.1.13 |
+| `bun` | building from source only | [bun.sh](https://bun.sh) | 1.3.13 |
+
+`agent-mesh doctor` reports which of these it can find and where.
 
 ### First run
 
@@ -55,27 +73,29 @@ Lanes start unattended. The daemon answers the two first-run gates it causes —
 
 ### Commands
 
-```text
-agent-mesh                                TUI
-agent-mesh up | down | restart | status | logs
-agent-mesh service install | status | restart | stop | logs | uninstall
-agent-mesh doctor
-agent-mesh config hub set URL | show
-agent-mesh lane add ID --runtime KIND --workspace PATH [--security-profile P]
-agent-mesh lane list | enable | disable | remove [ID]
-agent-mesh channel add ID --lane ID --provider discord --token-file PATH
-agent-mesh channel list | enable | disable | remove [ID] --lane ID
-agent-mesh mesh send --lane ID --to ID --content TEXT
-agent-mesh mesh agents | inbox --lane ID
-agent-mesh outbox status --lane ID
-agent-mesh outbox replay --lane ID [--event-id ID ...]
-agent-mesh attach LANE_ID
-agent-mesh runtime observe --lane ID
-```
+Every TUI action has a non-interactive equivalent. `--config`, `--state-dir` and `--runtime-dir` override the default locations for any of them.
 
-`attach` opens the lane's session; its tmux session is named `mesh-lane-<identity>`. `runtime observe` opens a redacted view — turn states and sizes, never bodies — for when the screen is shared.
+| Command | What it does | Options | Example |
+|---|---|---|---|
+| `agent-mesh` | opens the TUI — onboarding when there are no lanes, operations after | | `agent-mesh` |
+| `up` · `down` · `restart` | install and start, stop, or restart the user service | | `agent-mesh up` |
+| `status` · `logs` | daemon state and lane sockets; service log paths | | `agent-mesh status` |
+| `service …` | the same service, plus `uninstall` to remove it | `install\|status\|restart\|stop\|logs\|uninstall` | `agent-mesh service uninstall` |
+| `doctor` | config path, daemon state, and which runtime CLIs were found | | `agent-mesh doctor` |
+| `config hub set` · `show` | the Hub base URL; discovery derives the RPC and upload endpoints | | `agent-mesh config hub set http://127.0.0.1:3100` |
+| `lane add` | registers an agent: identity, runtime, workspace, security profile | `--identity` `--runtime claude\|codex\|antigravity` `--workspace` `--security-profile` `--agent-type` `--model` `--acknowledge-risk` | `agent-mesh lane add writer --runtime claude --workspace ~/work/writer` |
+| `lane list` · `enable` · `disable` · `remove` | the configured lanes and their state | | `agent-mesh lane disable writer` |
+| `channel add` | attaches a channel driver to a lane | `--lane` `--provider discord` `--token-file` `--account-ref` | `agent-mesh channel add ops --lane writer --provider discord --token-file ~/.secrets/bot` |
+| `channel list` · `enable` · `disable` · `remove` | drivers on a lane; removal retires the id permanently | `--lane` | `agent-mesh channel disable ops --lane writer` |
+| `mesh send` | sends a mesh message as that lane's identity | `--lane` `--to` `--content` `--reply-to` `--client-message-id` | `agent-mesh mesh send --lane writer --to reviewer --content "ready"` |
+| `mesh agents` | identities the Hub knows, with presence and type | `--lane` | `agent-mesh mesh agents --lane writer` |
+| `mesh inbox` | this lane's turns, with state and response | `--lane` | `agent-mesh mesh inbox --lane writer` |
+| `outbox status` | pending, retrying, dead-lettered and acked counts, plus Blob usage | `--lane` | `agent-mesh outbox status --lane writer` |
+| `outbox replay` | returns dead letters to the queue; all of them, or the ones named | `--lane` `--event-id` (repeatable) | `agent-mesh outbox replay --lane writer` |
+| `attach` | opens the lane's session — the CLI, a viewer on it, or the queue | | `agent-mesh attach writer` |
+| `runtime observe` | redacted queue view: states and sizes, never bodies | `--lane` | `agent-mesh runtime observe --lane writer` |
 
-Security profiles are `sandboxed`, `workspace` (default) and `unrestricted`; the last is refused without `--acknowledge-risk`. The TUI shows the profile in effect and never changes it silently.
+`attach` names its tmux session `mesh-lane-<identity>`. Security profiles are `sandboxed`, `workspace` (default) and `unrestricted`; the last is refused without `--acknowledge-risk`. The TUI shows the profile in effect and never changes it silently.
 
 ### Worth knowing before you need it
 
