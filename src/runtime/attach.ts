@@ -145,9 +145,22 @@ export async function ensureAttachTarget(context: AttachContext): Promise<string
     return session;
   }
 
-  // Antigravity: one `agy --print` child per turn and nothing resident, so
-  // what an operator attaches to is the redacted queue rather than a session.
+  // Antigravity keeps no process between turns, but it does keep the
+  // conversation: `agy --conversation <id>` opens the CLI on the one the lane
+  // has been using, history and all, and an operator can type into it. The
+  // daemon's `--print` runs against the same id keep working while it is open
+  // and their turns survive -- checked, not assumed. They do not render live,
+  // so new turns appear when the session is reopened.
   if (hasSession(tmux, session)) return session;
+  const agy = context.lane.runtime.command ?? Bun.which("agy");
+  if (context.conversationId && agy) {
+    createSession(tmux, session, workspace, [agy, "--conversation", context.conversationId]);
+    return session;
+  }
+  // Nothing to open yet: no turn has run, so there is no conversation. The
+  // redacted queue is what there is to look at, and it is also what to use
+  // when the bodies should not be on this screen -- `runtime observe` opens it
+  // directly.
   createSession(tmux, session, workspace, [
     ...context.selfCommand,
     "runtime",

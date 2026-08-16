@@ -72,7 +72,11 @@ agent-mesh up|down|restart|attach|status|logs
 |---|---|
 | Claude | tmux의 CLI 세션. 없으면 다시 세운다 |
 | Codex | 데몬이 돌리는 thread에 붙는 `codex --remote` 뷰어 |
-| Antigravity | redacted 관찰 화면. 상주 세션이 없다 |
+| Antigravity | lane의 대화를 연 `agy --conversation <id>`. 대화가 아직 없으면 redacted 관찰 화면 |
+
+Antigravity는 turn 사이에 프로세스를 남기지 않지만 **대화는 남긴다.** `agy --conversation <id>`가 lane이 쓰던 대화를 이력째 열고, 운영자가 거기에 직접 입력할 수도 있다. 그 상태에서 데몬의 `--print` 실행은 계속 성공하고 그 turn도 보존된다 — 다만 **실시간으로 렌더되지는 않아** 새 turn은 세션을 다시 열 때 나타난다.
+
+본문을 화면에 두면 안 되는 상황에서는 `agent-mesh runtime observe --lane ID`가 redacted 화면을 직접 연다(`OBS-001`).
 
 세 경우의 판단은 TUI와 CLI가 같은 코드(`src/runtime/attach.ts`)를 쓴다. CLI에만 있던 동안 TUI의 attach는 셋 중 Claude 하나에만 동작했다.
 

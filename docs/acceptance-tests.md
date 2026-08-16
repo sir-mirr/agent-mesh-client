@@ -40,6 +40,7 @@
 | `AT-032` | `OBS-002` | Codex lane에 attach하면 데몬이 돌리는 thread가 열리고, 그 뒤 도착한 mesh turn과 응답이 관찰 화면에 나타난다. |
 | `AT-033` | `UX-006`, `UX-007` | 비활성 lane이 Hub·Key를 미설정/불명으로 표시하지 않고, enable·disable·remove가 진행 표시와 함께 끝난다. |
 | `AT-034` | `UX-008`, `SEC-003` | lane 제거 확인 화면이 identity 잔존과 재추가 조건을 알리고, 같은 키를 가진 호스트에서 재추가가 승인 없이 복구된다. |
+| `AT-039` | `OBS-004` | Antigravity lane에 attach하면 lane이 쓰던 대화가 이력과 함께 열리고, 열린 채로 도착한 turn도 저장돼 다시 열었을 때 보인다. |
 | `AT-038` | `RUN-009` | Codex/Antigravity lane이 turn 대기 중 `queued`, 처리 중 `running`, 없을 때 `idle`을 보고한다. |
 | `AT-037` | `OBS-003`, `RUN-005` | Codex lane을 disable 후 enable하면 mesh 트래픽 없이도 attach되고, 열린 대화가 이전 대화이며, 이후 도착한 turn이 같은 화면에 나타난다. |
 | `AT-036` | `UX-009`, `UX-010` | 세 runtime 모두 TUI와 CLI에서 같은 방식으로 attach되고, 세션 이름이 `mesh-lane-<identity>`이며, 점유된 이름에는 붙지 않고 오류를 보인다. |

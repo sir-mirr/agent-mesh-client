@@ -466,7 +466,13 @@ export class AgentMeshDaemon {
                 : this.#claudeSupervisors.get(lane.id)?.status ??
                   turnDrivenRuntimeState(
                     controller,
-                    this.#runtimeWorkers.get(lane.id)?.options.adapter.sessionThreadId?.() ?? null,
+                    // The adapter's own answer first: Codex holds a thread
+                    // open whether or not a turn has run. Antigravity holds
+                    // nothing between turns, so its conversation is whatever
+                    // the last one used.
+                    this.#runtimeWorkers.get(lane.id)?.options.adapter.sessionThreadId?.() ??
+                      controller?.runtimeInbox.latestConversationId() ??
+                      null,
                   ),
               channels: lane.channels.map((channel) => ({
                 id: channel.id,
