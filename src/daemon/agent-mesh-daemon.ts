@@ -190,7 +190,15 @@ export class AgentMeshDaemon {
     worker.start();
   }
 
-  async #startClaudeSupervisor(controller: LaneController, resume = false): Promise<void> {
+  /**
+   * @param resume defaults to continuing the previous conversation. Every
+   *   caller here is the daemon restoring a lane -- boot, config reload,
+   *   re-enable -- and none of those are a decision to forget. A mesh peer
+   *   addresses this agent by identity, so a lane that comes back empty is a
+   *   stranger answering to the name it was talking to. Only `runtime.start`
+   *   passes false, and only because an operator asked for a clean session.
+   */
+  async #startClaudeSupervisor(controller: LaneController, resume = true): Promise<void> {
     if (controller.config.runtime.kind !== "claude") return;
     const supervisor = new ClaudeSupervisor({
       lane: controller.config,

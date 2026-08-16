@@ -235,18 +235,35 @@ export class ClaudeSupervisor {
     ];
     const answered = new Set<number>();
     const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline && answered.size < gates.length) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    // Waiting for every gate is what made this slow: a workspace that is
+    // already trusted raises one gate, and the loop then sat out the rest of
+    // its deadline waiting for a second that was never coming. What actually
+    // ends the wait is the session no longer asking anything.
+    let settled = 0;
+    let drew = false;
+    while (Date.now() < deadline && settled < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
       const captured = Bun.spawnSync([tmux, "capture-pane", "-p", "-t", this.tmuxSession], {
         stdout: "pipe",
         stderr: "ignore",
       });
       if (captured.exitCode !== 0) return;
       const pane = captured.stdout.toString("utf8");
-      // The selection cursor has to be on screen too: the warning text alone
-      // also appears in the banner after the prompt is gone, and answering
-      // then would send a stray keystroke into the session's input.
-      if (!/^\s*\u276f\s*1\.\s/m.test(pane)) continue;
+      // Nothing on screen yet is not the same as nothing being asked. Counting
+      // it would let this return during the CLI's first moments, before the
+      // first gate has had a chance to draw.
+      if (!drew) {
+        if (pane.trim().length === 0) continue;
+        drew = true;
+      }
+      // The selection cursor has to be on screen: the warning text alone also
+      // appears in the banner after the prompt is gone, and answering then
+      // would send a stray keystroke into the session's input.
+      if (!/^\s*\u276f\s*1\.\s/m.test(pane)) {
+        settled += 1;
+        continue;
+      }
+      settled = 0;
       const index = gates.findIndex((gate, position) => !answered.has(position) && gate.test(pane));
       if (index === -1) continue;
       answered.add(index);
