@@ -75,25 +75,52 @@ lane은 무인으로 기동합니다. 데몬이 **자기가 유발한 첫 실행
 
 TUI의 모든 동작에는 대응하는 비대화형 명령이 있습니다. `--config`, `--state-dir`, `--runtime-dir`로 기본 경로를 덮을 수 있습니다.
 
-| 명령 | 하는 일 | 옵션 | 예시 |
-|---|---|---|---|
-| `agent-mesh` | TUI — lane이 없으면 온보딩, 있으면 운영 화면 | | `agent-mesh` |
-| `up` · `down` · `restart` | 사용자 서비스 설치·기동, 중지, 재기동 | | `agent-mesh up` |
-| `status` · `logs` | 데몬 상태와 lane 소켓, 서비스 로그 경로 | | `agent-mesh status` |
-| `service …` | 같은 서비스 조작에 `uninstall`이 추가된 형태 | `install\|status\|restart\|stop\|logs\|uninstall` | `agent-mesh service uninstall` |
-| `doctor` | config 경로, 데몬 상태, 발견된 runtime CLI 위치 | | `agent-mesh doctor` |
-| `config hub set` · `show` | Hub base URL. RPC·upload endpoint는 discovery로 얻습니다 | | `agent-mesh config hub set http://127.0.0.1:3100` |
-| `lane add` | agent 등록 — identity, runtime, workspace, 보안 profile | `--identity` `--runtime claude\|codex\|antigravity` `--workspace` `--security-profile` `--agent-type` `--model` `--acknowledge-risk` | `agent-mesh lane add writer --runtime claude --workspace ~/work/writer` |
-| `lane list` · `enable` · `disable` · `remove` | 설정된 lane과 상태 | | `agent-mesh lane disable writer` |
-| `channel add` | lane에 channel driver를 붙입니다 | `--lane` `--provider discord` `--token-file` `--account-ref` | `agent-mesh channel add ops --lane writer --provider discord --token-file ~/.secrets/bot` |
-| `channel list` · `enable` · `disable` · `remove` | lane의 driver. 제거한 id는 영구히 재사용하지 않습니다 | `--lane` | `agent-mesh channel disable ops --lane writer` |
-| `mesh send` | 그 lane의 identity로 mesh 메시지를 보냅니다 | `--lane` `--to` `--content` `--reply-to` `--client-message-id` | `agent-mesh mesh send --lane writer --to reviewer --content "준비됐습니다"` |
-| `mesh agents` | Hub가 아는 identity, 접속 상태와 type | `--lane` | `agent-mesh mesh agents --lane writer` |
-| `mesh inbox` | 이 lane의 turn과 상태·응답 | `--lane` | `agent-mesh mesh inbox --lane writer` |
-| `outbox status` | pending·retry·dead-letter·acked 수와 Blob 사용량 | `--lane` | `agent-mesh outbox status --lane writer` |
-| `outbox replay` | dead-letter를 큐로 되돌립니다. 전부 또는 지정한 것만 | `--lane` `--event-id` (반복 가능) | `agent-mesh outbox replay --lane writer` |
-| `attach` | lane의 세션을 엽니다 — CLI, 그 위의 뷰어, 또는 큐 화면 | | `agent-mesh attach writer` |
-| `runtime observe` | redacted 큐 화면. 상태와 글자 수만, 본문 없음 | `--lane` | `agent-mesh runtime observe --lane writer` |
+| 명령 | 하는 일 | 예시 |
+|---|---|---|
+| `agent-mesh` | TUI — lane이 없으면 온보딩, 있으면 운영 화면 | `agent-mesh` |
+| `agent-mesh up` · `down` · `restart` | 사용자 서비스 설치·기동, 중지, 재기동 | `agent-mesh up` |
+| `agent-mesh status` | 데몬 상태와 lane별 소켓 | `agent-mesh status` |
+| `agent-mesh logs` | 서비스 로그 위치 | `agent-mesh logs` |
+| `agent-mesh service uninstall` | 사용자 서비스 제거 | `agent-mesh service uninstall` |
+| `agent-mesh doctor` | config 경로, 데몬 상태, 발견된 runtime CLI | `agent-mesh doctor` |
+| `agent-mesh config hub set` | Hub base URL. 나머지는 discovery로 얻습니다 | `agent-mesh config hub set http://127.0.0.1:3100` |
+| `agent-mesh config hub show` | 적용 중인 URL | `agent-mesh config hub show` |
+| `agent-mesh lane add` | agent와 runtime을 등록합니다 | `agent-mesh lane add writer --runtime claude --workspace ~/work/writer` |
+| `agent-mesh lane list` | 설정된 lane 목록 | `agent-mesh lane list` |
+| `agent-mesh lane enable` · `disable` | 삭제하지 않고 기동·중지 | `agent-mesh lane disable writer` |
+| `agent-mesh lane remove` | 이 호스트에서만 제거. Mesh identity는 남습니다 | `agent-mesh lane remove writer` |
+| `agent-mesh channel add` | lane에 channel driver를 붙입니다 | `agent-mesh channel add ops --lane writer --provider discord --token-file ~/.secrets/bot` |
+| `agent-mesh channel list` | lane의 driver 목록 | `agent-mesh channel list --lane writer` |
+| `agent-mesh channel enable` · `disable` | driver 기동·중지 | `agent-mesh channel disable ops --lane writer` |
+| `agent-mesh channel remove` | 제거하고 id를 영구 회수합니다 | `agent-mesh channel remove ops --lane writer` |
+| `agent-mesh mesh send` | 그 lane의 identity로 메시지를 보냅니다 | `agent-mesh mesh send --lane writer --to reviewer --content "준비됐습니다"` |
+| `agent-mesh mesh agents` | Hub가 아는 identity, 접속 상태와 type | `agent-mesh mesh agents --lane writer` |
+| `agent-mesh mesh inbox` | 이 lane의 turn과 상태·응답 | `agent-mesh mesh inbox --lane writer` |
+| `agent-mesh outbox status` | pending·retry·dead-letter·acked 수 | `agent-mesh outbox status --lane writer` |
+| `agent-mesh outbox replay` | dead-letter를 큐로 되돌립니다 | `agent-mesh outbox replay --lane writer` |
+| `agent-mesh attach` | lane의 세션을 엽니다 — CLI, 그 위의 뷰어, 또는 큐 화면 | `agent-mesh attach writer` |
+| `agent-mesh runtime observe` | redacted 큐 화면. 상태와 글자 수만 | `agent-mesh runtime observe --lane writer` |
+
+### 옵션
+
+| 옵션 | 쓰는 곳 | 뜻 |
+|---|---|---|
+| `--lane ID` | 대부분의 명령 | 대상 lane |
+| `--identity NAME` | `lane add` | Mesh identity. 생략하면 lane id |
+| `--runtime KIND` | `lane add` | `claude`, `codex`, `antigravity` |
+| `--workspace PATH` | `lane add` | agent가 작업할 디렉터리 |
+| `--security-profile P` | `lane add` | `sandboxed`, `workspace`(기본), `unrestricted` |
+| `--acknowledge-risk` | `lane add` | `unrestricted` 저장에 필수 |
+| `--model NAME` | `lane add` | runtime 기본 모델을 덮습니다 |
+| `--agent-type TYPE` | `lane add` | `--runtime`에서 유도된 type을 덮습니다 |
+| `--provider NAME` | `channel add` | v0.1은 `discord` |
+| `--token-file PATH` | `channel add` | 한 번 읽어 lane secret으로 보관합니다 |
+| `--account-ref REF` | `channel add` | 이 driver가 대변하는 provider 계정 |
+| `--to ID` · `--content TEXT` | `mesh send` | 수신 identity와 본문 |
+| `--reply-to ID` | `mesh send` | 다른 메시지에 대한 답으로 표시합니다 |
+| `--client-message-id ID` | `mesh send` | 멱등 키. 같은 값 재전송은 두 번째 메시지가 아닙니다 |
+| `--event-id ID` | `outbox replay` | 지정한 것만 replay. 반복 가능하며 생략하면 전부 |
+| `--config` · `--state-dir` · `--runtime-dir` | 모든 명령 | 기본 경로를 덮습니다 |
 
 `attach`의 tmux 세션 이름은 `mesh-lane-<identity>`입니다. 보안 profile은 `sandboxed`, `workspace`(기본), `unrestricted`이고 마지막은 `--acknowledge-risk` 없이는 거부됩니다. TUI는 적용된 profile을 표시하며 조용히 바꾸지 않습니다.
 

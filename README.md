@@ -75,25 +75,52 @@ Lanes start unattended. The daemon answers the two first-run gates it causes —
 
 Every TUI action has a non-interactive equivalent. `--config`, `--state-dir` and `--runtime-dir` override the default locations for any of them.
 
-| Command | What it does | Options | Example |
-|---|---|---|---|
-| `agent-mesh` | opens the TUI — onboarding when there are no lanes, operations after | | `agent-mesh` |
-| `up` · `down` · `restart` | install and start, stop, or restart the user service | | `agent-mesh up` |
-| `status` · `logs` | daemon state and lane sockets; service log paths | | `agent-mesh status` |
-| `service …` | the same service, plus `uninstall` to remove it | `install\|status\|restart\|stop\|logs\|uninstall` | `agent-mesh service uninstall` |
-| `doctor` | config path, daemon state, and which runtime CLIs were found | | `agent-mesh doctor` |
-| `config hub set` · `show` | the Hub base URL; discovery derives the RPC and upload endpoints | | `agent-mesh config hub set http://127.0.0.1:3100` |
-| `lane add` | registers an agent: identity, runtime, workspace, security profile | `--identity` `--runtime claude\|codex\|antigravity` `--workspace` `--security-profile` `--agent-type` `--model` `--acknowledge-risk` | `agent-mesh lane add writer --runtime claude --workspace ~/work/writer` |
-| `lane list` · `enable` · `disable` · `remove` | the configured lanes and their state | | `agent-mesh lane disable writer` |
-| `channel add` | attaches a channel driver to a lane | `--lane` `--provider discord` `--token-file` `--account-ref` | `agent-mesh channel add ops --lane writer --provider discord --token-file ~/.secrets/bot` |
-| `channel list` · `enable` · `disable` · `remove` | drivers on a lane; removal retires the id permanently | `--lane` | `agent-mesh channel disable ops --lane writer` |
-| `mesh send` | sends a mesh message as that lane's identity | `--lane` `--to` `--content` `--reply-to` `--client-message-id` | `agent-mesh mesh send --lane writer --to reviewer --content "ready"` |
-| `mesh agents` | identities the Hub knows, with presence and type | `--lane` | `agent-mesh mesh agents --lane writer` |
-| `mesh inbox` | this lane's turns, with state and response | `--lane` | `agent-mesh mesh inbox --lane writer` |
-| `outbox status` | pending, retrying, dead-lettered and acked counts, plus Blob usage | `--lane` | `agent-mesh outbox status --lane writer` |
-| `outbox replay` | returns dead letters to the queue; all of them, or the ones named | `--lane` `--event-id` (repeatable) | `agent-mesh outbox replay --lane writer` |
-| `attach` | opens the lane's session — the CLI, a viewer on it, or the queue | | `agent-mesh attach writer` |
-| `runtime observe` | redacted queue view: states and sizes, never bodies | `--lane` | `agent-mesh runtime observe --lane writer` |
+| Command | What it does | Example |
+|---|---|---|
+| `agent-mesh` | opens the TUI — onboarding with no lanes, operations after | `agent-mesh` |
+| `agent-mesh up` · `down` · `restart` | install and start, stop, or restart the user service | `agent-mesh up` |
+| `agent-mesh status` | daemon state and each lane's socket | `agent-mesh status` |
+| `agent-mesh logs` | where the service writes its output | `agent-mesh logs` |
+| `agent-mesh service uninstall` | removes the user service | `agent-mesh service uninstall` |
+| `agent-mesh doctor` | config path, daemon state, and which runtime CLIs were found | `agent-mesh doctor` |
+| `agent-mesh config hub set` | the Hub base URL; discovery derives the rest | `agent-mesh config hub set http://127.0.0.1:3100` |
+| `agent-mesh config hub show` | the URL in effect | `agent-mesh config hub show` |
+| `agent-mesh lane add` | registers an agent and its runtime | `agent-mesh lane add writer --runtime claude --workspace ~/work/writer` |
+| `agent-mesh lane list` | configured lanes | `agent-mesh lane list` |
+| `agent-mesh lane enable` · `disable` | starts or stops one without deleting it | `agent-mesh lane disable writer` |
+| `agent-mesh lane remove` | removes it from this host; the Mesh identity stays | `agent-mesh lane remove writer` |
+| `agent-mesh channel add` | attaches a channel driver to a lane | `agent-mesh channel add ops --lane writer --provider discord --token-file ~/.secrets/bot` |
+| `agent-mesh channel list` | drivers on a lane | `agent-mesh channel list --lane writer` |
+| `agent-mesh channel enable` · `disable` | starts or stops a driver | `agent-mesh channel disable ops --lane writer` |
+| `agent-mesh channel remove` | removes it and retires the id permanently | `agent-mesh channel remove ops --lane writer` |
+| `agent-mesh mesh send` | sends a message as that lane's identity | `agent-mesh mesh send --lane writer --to reviewer --content "ready"` |
+| `agent-mesh mesh agents` | identities the Hub knows, with presence and type | `agent-mesh mesh agents --lane writer` |
+| `agent-mesh mesh inbox` | this lane's turns, with state and response | `agent-mesh mesh inbox --lane writer` |
+| `agent-mesh outbox status` | pending, retrying, dead-lettered and acked counts | `agent-mesh outbox status --lane writer` |
+| `agent-mesh outbox replay` | returns dead letters to the queue | `agent-mesh outbox replay --lane writer` |
+| `agent-mesh attach` | opens the lane's session — the CLI, a viewer on it, or the queue | `agent-mesh attach writer` |
+| `agent-mesh runtime observe` | redacted queue view: states and sizes, never bodies | `agent-mesh runtime observe --lane writer` |
+
+### Options
+
+| Option | Used by | Meaning |
+|---|---|---|
+| `--lane ID` | most commands | which lane to act on |
+| `--identity NAME` | `lane add` | the Mesh identity; defaults to the lane id |
+| `--runtime KIND` | `lane add` | `claude`, `codex` or `antigravity` |
+| `--workspace PATH` | `lane add` | the directory the agent works in |
+| `--security-profile P` | `lane add` | `sandboxed`, `workspace` (default) or `unrestricted` |
+| `--acknowledge-risk` | `lane add` | required to save `unrestricted` |
+| `--model NAME` | `lane add` | overrides the runtime's default model |
+| `--agent-type TYPE` | `lane add` | overrides the type derived from `--runtime` |
+| `--provider NAME` | `channel add` | `discord` in v0.1 |
+| `--token-file PATH` | `channel add` | read once and stored as a lane secret |
+| `--account-ref REF` | `channel add` | which provider account this driver speaks as |
+| `--to ID` · `--content TEXT` | `mesh send` | recipient identity and message body |
+| `--reply-to ID` | `mesh send` | marks the message as answering another |
+| `--client-message-id ID` | `mesh send` | idempotency key; resending it is not a second message |
+| `--event-id ID` | `outbox replay` | replay only these; repeatable. Omit for all |
+| `--config` · `--state-dir` · `--runtime-dir` | any | override the default locations |
 
 `attach` names its tmux session `mesh-lane-<identity>`. Security profiles are `sandboxed`, `workspace` (default) and `unrestricted`; the last is refused without `--acknowledge-risk`. The TUI shows the profile in effect and never changes it silently.
 
