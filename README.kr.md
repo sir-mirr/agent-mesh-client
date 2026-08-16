@@ -28,7 +28,7 @@ Channel 왕복은 Hub를 우회하므로 Hub 장애가 로컬 응답을 막지 �
 
 세 runtime 모두 lane 기동과 함께 대화를 붙들고 있고 재시작 뒤 이전 대화를 잇습니다. 그래서 attach가 "메시지가 먼저 와야 한다"는 순서에 의존하지 않습니다.
 
-**상태:** `v0.1.0-dev`, macOS·Linux. contracts는 `@agent-mesh/contracts#v0.8.1` 고정이며, 그 계약과 `SPEC.md`의 소유자는 platform 저장소입니다.
+**상태:** `v0.1.0-dev`, macOS·Linux. contracts는 `@agent-mesh/contracts#v0.8.2` 고정이며, 그 계약과 `SPEC.md`의 소유자는 platform 저장소입니다.
 
 ---
 

@@ -126,7 +126,29 @@ export class LaneHubConnection {
             public_key: key.publicKey,
             create_only: true,
           });
-          keyStatus = provisioned.key?.status ?? "legacy-unverified";
+          // Not `provisioned.key.status`. A 2xx `key` object is not proof
+          // that this key was recorded for this identity: a Hub keyed on the
+          // fingerprint alone answers with whatever verdict that fingerprint
+          // already carries, which on a mixed-up key file is another
+          // identity's. The lane would report `approved` and then be refused
+          // at connect with -32014 and nothing in the response explaining it.
+          //
+          // So the registration is confirmed by reading back what the
+          // identity actually holds.
+          const confirmed = await lookupAgentIdentity(this.mesh.endpoints, this.lane.identity);
+          const recorded = confirmed?.keys.find(
+            (candidate) => candidate.fingerprint === key.fingerprint,
+          );
+          if (!recorded) {
+            throw new AgentIdentityConflictError(
+              this.lane.identity,
+              "IDENTITY_EXISTS",
+              `Registration did not record this host's key for ${this.lane.identity}; ` +
+                `the key may belong to another identity`,
+            );
+          }
+          keyStatus = recorded.status;
+          void provisioned;
           // Beside the key, because the two are reclaimed together and the
           // registration uses create_only, so the Hub keeps this value.
           await this.keyManager.rememberAgentType(this.lane.agent_type);
