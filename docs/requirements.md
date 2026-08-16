@@ -39,6 +39,7 @@
 | `UX-009` | MUST | tmux 세션 이름은 `mesh-lane-<identity>`여야 한다. 이름이 이미 점유돼 있으면 그 세션에 붙지 말고 오류를 보여야 한다. |
 | `UX-010` | MUST | attach의 runtime별 동작은 TUI와 CLI가 같아야 한다. |
 | `RUN-007` | SHOULD | runtime 세션이 종료된 lane에서 attach는 세션을 다시 세울 수 있어야 하며, 이전 대화 이어가기와 새로 시작하기를 키보드로 고르게 해야 한다. |
+| `RUN-009` | MUST | 상주 프로세스가 없는 runtime의 상태는 turn 상태에서 파생해야 한다. turn을 처리 중인 lane과 할 일이 없는 lane이 같은 상태로 표시되면 안 된다. |
 | `RUN-008` | MUST | 사람 입력을 기다리는 runtime은 `awaiting-input`으로 구분되고 화면의 질문을 함께 보고해야 한다. 진행 중인 turn과 같은 상태로 표시하면 안 된다. |
 | `OBS-001` | SHOULD | 상주 세션이 없는 runtime은 redacted 관찰 화면을 제공해야 한다. 본문·reasoning·auth code는 데몬 밖으로 내보내면 안 되고 크기만 보고해야 한다. |
 | `OBS-002` | SHOULD | 데몬이 구동하는 Codex app-server에 운영자가 같은 세션으로 붙을 수 있어야 한다. 뷰어는 데몬이 실제로 돌리는 thread를 열어야 하며, 붙을 thread가 없으면 빈 뷰어를 열지 말고 그 사실을 알려야 한다. |

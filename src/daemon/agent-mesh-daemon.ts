@@ -20,6 +20,21 @@ export interface AgentMeshDaemonOptions {
   onDiagnostic?: (message: string, error?: unknown) => void;
 }
 
+/**
+ * What a runtime with no resident process is doing, read from its queue.
+ *
+ * `running` has to be reachable: a lane mid-turn previously reported `idle`,
+ * because the state was derived from the first PENDING turn and claiming one
+ * clears that. Idle then covered both "nothing to do" and "working", which
+ * are the two things an operator is trying to tell apart.
+ */
+function turnDrivenRuntimeState(controller: LaneController | undefined): { state: string } {
+  const counts = controller?.runtimeInbox.countsByState() ?? {};
+  if ((counts.RUNNING ?? 0) > 0) return { state: "running" };
+  if ((counts.PENDING ?? 0) > 0) return { state: "queued" };
+  return { state: "idle" };
+}
+
 export class AgentMeshDaemon {
   readonly configStore: ConfigStore;
   readonly host: HostDaemon;
@@ -435,11 +450,14 @@ export class AgentMeshDaemon {
                 ? await controller.outbox.summary()
                 : { pending: 0, retry: 0, deadLetter: 0, warning: false },
               hub: this.#hubConnections.get(lane.id)?.status ?? null,
+              // Claude reports through its supervisor because a CLI in tmux
+              // has states a queue does not -- stopped, awaiting-input. The
+              // others have no resident process, so what they are doing is
+              // what their turns are doing.
               runtime_status: !lane.enabled
                 ? { state: "disabled" }
-                : this.#claudeSupervisors.get(lane.id)?.status ?? {
-                    state: controller?.runtimeInbox.next() ? "queued" : "idle",
-                  },
+                : this.#claudeSupervisors.get(lane.id)?.status ??
+                  turnDrivenRuntimeState(controller),
               channels: lane.channels.map((channel) => ({
                 id: channel.id,
                 provider: channel.provider,

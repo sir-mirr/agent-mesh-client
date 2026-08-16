@@ -87,3 +87,16 @@ Claude 세션이 없을 때 attach는 이어가기와 새로 시작하기를 좌
 enable·disable·remove는 데몬 reload를 수반하므로 진행 표시와 함께 실행한다(`UX-007`). 멈춘 화면은 멈춘 프로그램과 같아 보이고, 그때 누른 키는 다음 화면으로 들어간다.
 
 lane 제거 확인 화면은 Mesh identity가 Hub에 남는다는 것과, 이 호스트의 키가 있는 한 다시 추가할 수 있다는 것을 결정 전에 보인다(`UX-008`).
+
+## Runtime 상태
+
+| 상태 | 뜻 |
+|---|---|
+| `idle` | 처리할 turn이 없다 |
+| `queued` | turn이 도착했고 아직 집어가지 않았다 |
+| `running` | turn을 처리 중이다 |
+| `awaiting-input` | 사람 답변을 기다린다(Claude). 화면의 질문을 함께 보고한다 |
+| `stopped` | 세션을 갖는 runtime의 세션이 없다 |
+| `disabled` | lane이 꺼져 있다 |
+
+Claude는 tmux의 CLI가 상태를 갖고 있어 supervisor가 보고하고, 상주 프로세스가 없는 Codex·Antigravity는 turn 상태에서 파생한다. 후자를 `next()`(첫 PENDING turn)로 읽던 동안에는 worker가 turn을 집어가는 순간 `idle`로 돌아가, **처리 중인 lane과 할 일 없는 lane이 같은 표시**였다.

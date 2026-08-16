@@ -243,6 +243,23 @@ export class RuntimeInbox {
     })();
   }
 
+  /**
+   * How many turns sit in each state.
+   *
+   * Lane status was read from `next()`, which answers with the first PENDING
+   * turn -- so the moment a worker claimed one it returned null and the lane
+   * reported idle while the runtime was mid-turn. A lane doing work has to be
+   * distinguishable from one doing nothing, and the difference is here.
+   */
+  countsByState(): Record<string, number> {
+    const rows = this.#db()
+      .query<{ state: string; count: number }, []>(
+        "SELECT state, COUNT(*) AS count FROM runtime_turns GROUP BY state",
+      )
+      .all();
+    return Object.fromEntries(rows.map((row) => [row.state, row.count]));
+  }
+
   list(limit = 50): RuntimeTurn[] {
     return this.#db()
       .query<TurnRow, [number]>("SELECT * FROM runtime_turns ORDER BY created_at DESC LIMIT ?")
