@@ -32,6 +32,48 @@ export class AgentIdentityConflictError extends Error {
   }
 }
 
+/**
+ * The type the Hub has registered for an identity, asked over HTTP.
+ *
+ * Used when `/keys` does not carry the type -- Hubs that predate the field.
+ * The request is signed with the identity's own key, which the caller has by
+ * definition here: only a host still holding that key can reclaim the
+ * identity in the first place.
+ *
+ * Signing is what makes this work without a connected lane. HTTP has no
+ * socket to identify the caller, so the Hub refuses unsigned RPC -- which is
+ * why this looked impossible without a live websocket, and is not.
+ *
+ * Returns null on any failure. It informs a check, and a Hub that will not
+ * answer should not stop an agent from being added.
+ */
+export async function lookupRegisteredType(
+  endpoints: HubEndpoints,
+  identity: string,
+  sign: (method: string, rawParams: Uint8Array) => Promise<unknown>,
+): Promise<string | null> {
+  try {
+    const rawParams = Buffer.from(JSON.stringify({ from: identity }), "utf8");
+    const signature = await sign("mesh.list_agents", rawParams);
+    const response = await fetch(`${endpoints.apiHttp}/api/v1/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: `{"jsonrpc":"2.0","id":"type-lookup","method":"mesh.list_agents","params":${
+        rawParams.toString("utf8")
+      },"sig":${JSON.stringify(signature)}}`,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      result?: { agents?: Array<{ id?: unknown; type?: unknown }> };
+    };
+    const match = body.result?.agents?.find((agent) => agent.id === identity);
+    return typeof match?.type === "string" ? match.type : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function lookupAgentIdentity(
   endpoints: HubEndpoints,
   identity: string,

@@ -17,7 +17,7 @@ import { runRuntimeObserver } from "./runtime/observer";
 import { ensureAttachTarget, selfCommand } from "./runtime/attach";
 import { runDiscordDriver } from "./channel-driver/discord";
 import { resolveHubEndpoints } from "./hub/endpoints";
-import { lookupAgentIdentity } from "./hub/provisioning";
+import { lookupAgentIdentity, lookupRegisteredType } from "./hub/provisioning";
 import { SecretStore } from "./config/secrets";
 import { IdentityKeyManager } from "./identity/key-manager";
 import {
@@ -190,35 +190,6 @@ function runtimeKind(options: ParsedOptions): RuntimeKind {
     throw new Error("--runtime must be claude, codex or antigravity");
   }
   return value;
-}
-
-/**
- * The type the Hub already has for an identity, when it can be read.
- *
- * `/api/v1/agents/{identity}/keys` does not carry it, so this asks a connected
- * lane through `mesh.list_agents`. Returns null when nothing is connected --
- * the first lane on a host has no way to ask, and refusing to add one over a
- * question that cannot be put would be worse than the mismatch it prevents.
- */
-async function registeredAgentType(
-  options: ParsedOptions,
-  identity: string,
-): Promise<string | null> {
-  try {
-    const lanes = (await requestControl(options.runtimeDirectory, "lane.list", {})) as Array<{
-      lane_id: string;
-      hub?: { state?: string } | null;
-    }>;
-    const connected = lanes.find((lane) => lane.hub?.state === "connected");
-    if (!connected) return null;
-    const listed = (await requestControl(options.runtimeDirectory, "mesh.list_agents", {
-      lane_id: connected.lane_id,
-    })) as { agents?: Array<{ id?: unknown; type?: unknown }> };
-    const match = listed.agents?.find((agent) => agent.id === identity);
-    return typeof match?.type === "string" ? match.type : null;
-  } catch {
-    return null;
-  }
 }
 
 function defaultAgentType(runtime: RuntimeKind): string {
@@ -442,7 +413,17 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       // the field; older ones do not, so the locally recorded type and then a
       // connected lane's `mesh.list_agents` stand in.
       const registeredType =
-        registered.type ?? held.agentType ?? (await registeredAgentType(options, identity));
+        registered.type ??
+        held.agentType ??
+        (await lookupRegisteredType(
+          resolveHubEndpoints(current.hub.base_url, current.hub),
+          identity,
+          async (method, rawParams) =>
+            new IdentityKeyManager(identity, new SecretStore(options.secretDirectory)).signRequest(
+              method,
+              rawParams,
+            ),
+        ));
       if (registeredType && registeredType !== agentType) {
         throw new Error(
           `Agent Identity ${identity} is registered as ${registeredType}; ` +
