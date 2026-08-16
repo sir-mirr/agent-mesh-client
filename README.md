@@ -58,6 +58,7 @@ Lanes start unattended. The daemon answers the two first-run gates it causes —
 ```text
 agent-mesh                                TUI
 agent-mesh up | down | restart | status | logs
+agent-mesh service install | status | restart | stop | logs | uninstall
 agent-mesh doctor
 agent-mesh config hub set URL | show
 agent-mesh lane add ID --runtime KIND --workspace PATH [--security-profile P]
@@ -81,7 +82,7 @@ Security profiles are `sandboxed`, `workspace` (default) and `unrestricted`; the
 - **Removing a lane is local.** The Mesh identity stays registered. This host keeps its key, so the same agent can be added back; delete that key and it cannot. Permanent loss needs a Hub admin teardown, which this tool never performs.
 - **A reclaimed identity keeps its registered type.** Adding it back under a different runtime stops and names both types. Neither side is corrected automatically: overwriting the Hub's type would relabel that identity's entire audit history, and overwriting the local one would misname the agent here.
 - **Dead letters are quarantined, not deleted.** `outbox replay` returns them to the queue, and the agent screen offers it when the count is above zero.
-- **Attachment limits.** 100 MiB per file, 32 files and 256 MiB per event, one 180-second PUT with no resume.
+- **Attachment limits.** 100 MiB per file, 32 files and 256 MiB per event, uploaded in one PUT with no resume. The timeout is the Hub's to set and this client follows what it advertises.
 
 ---
 

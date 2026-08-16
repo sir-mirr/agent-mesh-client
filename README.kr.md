@@ -58,6 +58,7 @@ lane은 무인으로 기동합니다. 데몬이 **자기가 유발한 첫 실행
 ```text
 agent-mesh                                TUI
 agent-mesh up | down | restart | status | logs
+agent-mesh service install | status | restart | stop | logs | uninstall
 agent-mesh doctor
 agent-mesh config hub set URL | show
 agent-mesh lane add ID --runtime KIND --workspace PATH [--security-profile P]
@@ -81,7 +82,7 @@ agent-mesh runtime observe --lane ID
 - **lane 제거는 로컬에만 적용됩니다.** Mesh identity는 등록된 채 남습니다. 이 호스트가 키를 갖고 있으면 같은 agent를 다시 추가할 수 있고, 그 키를 지우면 못 합니다. 영구 상실은 Hub admin teardown뿐이고 이 도구는 그것을 하지 않습니다.
 - **되찾는 identity는 등록된 type을 유지합니다.** 다른 runtime으로 추가하려 하면 두 type을 밝히며 멈춥니다. 어느 쪽도 자동으로 고치지 않습니다 — Hub의 type을 덮으면 그 identity의 **과거 감사 기록 전부가 소급해서 다른 runtime으로 읽히고**, 로컬을 덮으면 여기서 agent 이름이 틀립니다.
 - **dead-letter는 격리이지 삭제가 아닙니다.** `outbox replay`가 큐로 되돌리고, 카운트가 0보다 크면 agent 화면이 그 동작을 제시합니다.
-- **첨부 한도.** 파일당 100 MiB, event당 32개·합계 256 MiB, 180초 단일 PUT(resume 없음).
+- **첨부 한도.** 파일당 100 MiB, event당 32개·합계 256 MiB, 단일 PUT(resume 없음). timeout은 Hub가 정하며 이 클라이언트는 Hub가 광고한 값을 따릅니다.
 
 ---
 
