@@ -47,6 +47,7 @@
 | `OBS-003` | MUST | 세션을 갖는 runtime은 lane 기동과 함께 세션과 대화를 세워야 한다. 이전 대화가 있으면 이어야 하고, 붙을 대화의 존재가 트래픽 도착에 의존하면 안 된다. |
 | `UX-006` | MUST | 비활성 lane의 Hub·Key 상태를 미설정이나 불명으로 표시하면 안 된다. 연결하지 않은 상태와 잘못 설정된 상태는 구분되어야 한다. |
 | `UX-007` | MUST | 데몬 reload를 수반하는 TUI 동작은 진행 표시를 보여야 한다. 화면이 멈춘 채로 두면 안 된다. |
+| `SEC-004` | MUST | 이미 등록된 identity를 되찾을 때 agent type은 Hub의 등록값을 따라야 한다. 다른 type으로 추가하려는 시도는 거부해야 하며, 조용히 로컬 값을 쓰면 안 된다. |
 | `UX-008` | MUST | lane 제거는 Mesh identity가 Hub에 남는다는 것과, 이 호스트의 키가 있는 한 다시 추가할 수 있다는 것을 결정 전에 알려야 한다. |
 | `SEC-001` | MUST | provider token과 identity private key를 감사 payload·일반 로그·진단 export에서 제거해야 한다. |
 | `SEC-002` | MUST | lane identity는 Ed25519 key와 Hub 승인 상태를 사용해야 한다. |

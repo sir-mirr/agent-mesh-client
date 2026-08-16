@@ -99,6 +99,8 @@ CLI에서 `/exit`하면 tmux 세션이 사라집니다. 그 상태에서 `attach
 
 사람 개입이 필요한 대기는 상태로 구분됩니다. 해당 lane의 runtime 상태가 `running`이 아니라 **`awaiting-input`**이 되고 화면에 뜬 질문이 함께 표시되므로, 느린 turn과 헷갈리지 않습니다. 판정은 tmux pane에서 선택 커서(`❯ 1.`)를 읽어서 하며 — MCP 쪽으로는 대기 중 아무 신호도 오지 않기 때문에 — 시간으로 추측하지 않습니다.
 
+이미 등록된 identity를 되찾을 때 agent type은 **Hub의 등록값을 따릅니다.** Hub는 자기가 들고 있는 type을 바꾸지 않으므로, 다른 runtime으로 추가하면 로컬 설정과 등록이 어긋나고 감사 기록이 실제와 다른 agent를 가리키게 됩니다. CLI는 거부하고, TUI는 runtime 선택을 건너뛰고 등록된 값으로 고정합니다.
+
 Hub 관리자는 TUI의 전체 Ed25519 fingerprint와 Hub 승인 화면의 값을 대조해 key를 승인해야 합니다. 승인 전에도 로컬 channel 메시지와 첨부는 outbox에 보존되지만 mesh 송신과 Hub 감사 적재는 대기합니다.
 
 ## 주요 CLI

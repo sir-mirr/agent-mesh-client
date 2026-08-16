@@ -337,7 +337,7 @@ async function askSecret(reader: Reader, prompt: string, allowBack = false): Pro
   }
 }
 
-function agentType(runtime: RuntimeKind): string {
+function agentTypeFor(runtime: RuntimeKind): string {
   if (runtime === "claude") return "ai-claude";
   if (runtime === "codex") return "ai-codex";
   return "ai-antigravity";
@@ -364,7 +364,7 @@ async function askAgentIdentity(
   existing: readonly LaneConfig[],
   endpoints: HubEndpoints,
   secretDirectory: string,
-): Promise<string> {
+): Promise<{ identity: string; agentType?: string }> {
   while (true) {
     const identity = await ask(reader, "Agent Identity", undefined, true);
     if (!identity) {
@@ -397,7 +397,10 @@ async function askAgentIdentity(
           `That Agent Identity is registered to this host's key (${held.fingerprint}).\n` +
             `Reclaiming it; key is currently ${registered.keyStatus ?? "registered"}.\n`,
         );
-        return identity;
+        // The Hub keeps the type it already has, so the runtime is decided
+        // here rather than asked for again -- picking another would write a
+        // lane that disagrees with its own registration.
+        return { identity, ...(held.agentType ? { agentType: held.agentType } : {}) };
       }
     }
     if (registered) {
@@ -408,8 +411,16 @@ async function askAgentIdentity(
       continue;
     }
     process.stdout.write("✓ Agent Identity is available in Mesh.\n");
-    return identity;
+    return { identity };
   }
+}
+
+/** The runtime a registered type belongs to, when this client has one. */
+function runtimeForAgentType(agentType: string): RuntimeKind | null {
+  if (agentType === "ai-claude") return "claude";
+  if (agentType === "ai-codex") return "codex";
+  if (agentType === "ai-antigravity") return "antigravity";
+  return null;
 }
 
 async function createLane(
@@ -420,17 +431,33 @@ async function createLane(
 ): Promise<LaneConfig> {
   heading("Add agent");
   process.stdout.write(`${paint(DIM, "Esc  Back")}\n\n`);
-  const identity = await askAgentIdentity(reader, existing, endpoints, secretDirectory);
-  const id = deriveLaneId(identity, existing.map((lane) => lane.id));
-  const runtime = await selectHorizontal<RuntimeKind>(
+  const { identity, agentType } = await askAgentIdentity(
     reader,
-    "CLI Runtime",
-    [
-      { value: "claude", label: "Claude" },
-      { value: "codex", label: "Codex" },
-      { value: "antigravity", label: "AntiGravity" },
-    ],
+    existing,
+    endpoints,
+    secretDirectory,
   );
+  const id = deriveLaneId(identity, existing.map((lane) => lane.id));
+  // A reclaimed identity keeps the type the Hub registered it under, so the
+  // runtime follows from it instead of being offered again. Offering the
+  // choice would let someone pick one the Hub will not honour.
+  const reclaimedRuntime = agentType ? runtimeForAgentType(agentType) : null;
+  if (reclaimedRuntime) {
+    process.stdout.write(
+      `Runtime is fixed to ${reclaimedRuntime} by the registration (${agentType}).\n`,
+    );
+  }
+  const runtime =
+    reclaimedRuntime ??
+    (await selectHorizontal<RuntimeKind>(
+      reader,
+      "CLI Runtime",
+      [
+        { value: "claude", label: "Claude" },
+        { value: "codex", label: "Codex" },
+        { value: "antigravity", label: "AntiGravity" },
+      ],
+    ));
   const workspace = resolve(await ask(reader, "Workspace", process.cwd(), true));
   const profile = await selectHorizontal<RuntimeSecurityConfig["profile"]>(
     reader,
@@ -461,7 +488,7 @@ async function createLane(
   return {
     id,
     identity,
-    agent_type: agentType(runtime),
+    agent_type: agentType ?? agentTypeFor(runtime),
     enabled: true,
     runtime: {
       kind: runtime,

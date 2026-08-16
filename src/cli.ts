@@ -192,6 +192,35 @@ function runtimeKind(options: ParsedOptions): RuntimeKind {
   return value;
 }
 
+/**
+ * The type the Hub already has for an identity, when it can be read.
+ *
+ * `/api/v1/agents/{identity}/keys` does not carry it, so this asks a connected
+ * lane through `mesh.list_agents`. Returns null when nothing is connected --
+ * the first lane on a host has no way to ask, and refusing to add one over a
+ * question that cannot be put would be worse than the mismatch it prevents.
+ */
+async function registeredAgentType(
+  options: ParsedOptions,
+  identity: string,
+): Promise<string | null> {
+  try {
+    const lanes = (await requestControl(options.runtimeDirectory, "lane.list", {})) as Array<{
+      lane_id: string;
+      hub?: { state?: string } | null;
+    }>;
+    const connected = lanes.find((lane) => lane.hub?.state === "connected");
+    if (!connected) return null;
+    const listed = (await requestControl(options.runtimeDirectory, "mesh.list_agents", {
+      lane_id: connected.lane_id,
+    })) as { agents?: Array<{ id?: unknown; type?: unknown }> };
+    const match = listed.agents?.find((agent) => agent.id === identity);
+    return typeof match?.type === "string" ? match.type : null;
+  } catch {
+    return null;
+  }
+}
+
 function defaultAgentType(runtime: RuntimeKind): string {
   if (runtime === "claude") return "ai-claude";
   if (runtime === "codex") return "ai-codex";
@@ -361,6 +390,7 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     }
     const model = option(options, "--model");
     const identity = option(options, "--identity") ?? value;
+    const agentType = option(options, "--agent-type") ?? defaultAgentType(kind);
     const current = await new ConfigStore(options.configFile).load();
     if (!current.hub) {
       throw new Error("Configure a Hub before adding a lane so Agent Identity can be checked");
@@ -395,6 +425,18 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
           `Agent Identity belongs to a different key: ${identity} (${registered.keyStatus ?? "registered"})`,
         );
       }
+      // The Hub will not change the type of an identity it already holds, so
+      // reclaiming one as a different runtime writes a local config that
+      // disagrees with the registration -- and the audit trail then describes
+      // an agent that is not the one running. The registered type wins, and
+      // asking for another is refused rather than silently ignored.
+      const registeredType = held.agentType ?? (await registeredAgentType(options, identity));
+      if (registeredType && registeredType !== agentType) {
+        throw new Error(
+          `Agent Identity ${identity} is registered as ${registeredType}; ` +
+            `this would add it as ${agentType}. Use the matching runtime, or a new identity.`,
+        );
+      }
       process.stderr.write(
         `Reclaiming ${identity}: this host holds its key (${held.fingerprint}), ` +
           `currently ${registered.keyStatus ?? "registered"}.\n`,
@@ -403,7 +445,7 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     const lane: LaneConfig = {
       id: value,
       identity,
-      agent_type: option(options, "--agent-type") ?? defaultAgentType(kind),
+      agent_type: agentType,
       enabled: true,
       runtime: {
         kind,
