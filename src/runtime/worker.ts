@@ -20,6 +20,12 @@ export class RuntimeWorker {
 
   start(): void {
     if (this.#loop) return;
+    void this.options.adapter.warmUp?.().catch((error: unknown) =>
+      this.options.onDiagnostic?.(
+        `Runtime session did not start for lane ${this.options.laneId}`,
+        error,
+      ),
+    );
     this.#loop = this.#runLoop();
   }
 

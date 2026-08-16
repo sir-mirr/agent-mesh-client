@@ -19,6 +19,16 @@ export interface RuntimeAdapter {
   readonly kind: RuntimeConfig["kind"];
   run(invocation: RuntimeInvocation): Promise<RuntimeResult>;
   stop(): Promise<void>;
+  /**
+   * Bring up whatever the lane's session lives in, before any turn arrives.
+   *
+   * Only runtimes that hold a session implement this. Starting it lazily made
+   * the session conditional on traffic: a lane could be enabled, connected and
+   * approved, and still have nothing to attach to -- so the answer to "open my
+   * agent" was "send it a message first", which is backwards. Failure here is
+   * reported and does not stop the lane; the turn path starts it again.
+   */
+  warmUp?(): Promise<void>;
 }
 
 export class RuntimeAdapterError extends Error {

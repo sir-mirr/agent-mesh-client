@@ -115,6 +115,11 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
     return this.socketPath ? `unix://${this.socketPath}` : null;
   }
 
+  /** The app-server is the session, so a Codex lane has one from the start. */
+  async warmUp(): Promise<void> {
+    await this.#ensureReady();
+  }
+
   async run(invocation: RuntimeInvocation): Promise<RuntimeResult> {
     await this.#ensureReady();
     const mode = sandboxMode(this.config);

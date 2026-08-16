@@ -123,6 +123,16 @@ export async function ensureAttachTarget(context: AttachContext): Promise<string
       context.conversationId && loaded.includes(context.conversationId)
         ? context.conversationId
         : undefined;
+    // No thread of the daemon's to join means the lane has not handled a turn
+    // yet, so the viewer would open an empty one and stay there -- the turns
+    // that arrive later run in the daemon's thread, not this one. Said here
+    // because the screen it produces looks like a working session.
+    if (!thread) {
+      throw new AttachUnavailableError(
+        "This agent has no conversation running yet. Its first turn opens one; " +
+          "attach after that and this will show the work.",
+      );
+    }
     createSession(tmux, session, workspace, [
       codex,
       "--remote",
