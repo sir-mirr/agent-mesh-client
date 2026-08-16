@@ -409,9 +409,18 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       // disagreeing with the registration, which misnames the agent here
       // instead. Neither side knows which one is intended -- only the person
       // running it does, so this stops and says both.
-      // The Hub's own answer first. `/keys` carries the type on Hubs that have
-      // the field; older ones do not, so the locally recorded type and then a
-      // connected lane's `mesh.list_agents` stand in.
+      // Three sources, narrowest requirement first.
+      //
+      //   /keys `type`      no key, no approval, no connection -- always works
+      //                     where the Hub has the field
+      //   local record      written when this host provisioned the identity
+      //   signed HTTP       needs the key to be approved: `mesh.list_agents`
+      //                     answers -32014 to a pending one
+      //
+      // The last is why this can still come back empty on an older Hub while
+      // reclaiming an identity whose key is not approved yet. The check is
+      // skipped there rather than blocking the add, and the mismatch it would
+      // have caught surfaces when the operator looks at the lane.
       const registeredType =
         registered.type ??
         held.agentType ??
