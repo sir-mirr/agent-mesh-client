@@ -42,7 +42,9 @@ codex app-server --listen unix://<runtime-dir>/codex-<lane>.sock
 
 이 경로는 Homebrew cask와 공식 installer 어느 쪽에서도 동작합니다 — `--listen unix://`와 `--remote`는 두 설치 모두에 있습니다. 공식 installer의 standalone 경로(`~/.codex/packages/standalone/current/`)가 필요한 것은 `codex app-server daemon` 계열뿐이고, 이 클라이언트는 그것을 쓰지 않습니다. 두 설치가 공존하면 PATH 순서가 어느 바이너리를 쓸지 결정하므로 `agent-mesh doctor`로 확인하십시오.
 
-관찰자 TUI는 자기 thread를 엽니다. 데몬이 돌리는 turn은 같은 서버의 다른 thread라, 관찰자 화면에 그 turn이 자동으로 나타나지는 않습니다.
+관찰자는 **데몬이 돌리는 thread에 붙습니다.** `codex --remote unix://<path> resume <thread-id>`로 열기 때문에, 데몬이 처리하는 mesh turn과 모델 응답이 그 화면에 실시간으로 나타납니다. app-server가 세션 본체이고 TUI는 뷰어라 여러 클라이언트가 같은 thread에 동시에 붙을 수 있습니다.
+
+thread id는 lane의 turn 기록에서 가져옵니다. 서버의 `thread/loaded/list`에는 뷰어가 종료된 thread도 rollout 없이 남아 있어서, 그것을 resume하면 실패하고 pane이 같이 죽습니다. 데몬이 마지막으로 처리한 대화가 무엇인지는 데몬만 압니다.
 
 app-server의 unix transport는 stdio와 프로토콜이 다릅니다 — `/rpc`의 WebSocket이고 NDJSON이 아닙니다. 직접 붙을 일이 있다면 [`src/runtime/ws-unix-client.ts`](./src/runtime/ws-unix-client.ts)를 보십시오.
 

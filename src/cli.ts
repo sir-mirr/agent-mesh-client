@@ -14,6 +14,7 @@ import {
 import { runTui } from "./tui/app";
 import { runClaudeChannelMcp } from "./runtime/claude-channel-mcp";
 import { runRuntimeObserver } from "./runtime/observer";
+import { loadedThreadIds } from "./runtime/ws-unix-client";
 import { runDiscordDriver } from "./channel-driver/discord";
 import { resolveHubEndpoints } from "./hub/endpoints";
 import { lookupAgentIdentity } from "./hub/provisioning";
@@ -299,12 +300,34 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
         stderr: "ignore",
       });
       if (running.exitCode !== 0) {
+        // Point the viewer at the thread the daemon is driving. Without this
+        // the TUI opens one of its own, so two threads run on one server and
+        // the operator watches the empty one -- attached, and shown none of
+        // the work.
+        //
+        // The id comes from the lane's turns rather than from the server's
+        // loaded list, because that list also holds threads whose viewer has
+        // exited: they stay loaded with no rollout behind them, and resuming
+        // one fails and takes the pane down with it. What the daemon last
+        // worked on is a fact only the daemon has.
+        const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
+          lane_id: command,
+          limit: 20,
+        })) as Array<{ conversationId?: string | null }>;
+        const candidate = turns.find((turn) => typeof turn.conversationId === "string")
+          ?.conversationId;
+        const loaded = await loadedThreadIds(socket);
+        // Still has to be live: a lane idle long enough for the server to drop
+        // the thread resumes from disk, which is fine, but one the server
+        // never had is not something to hand the viewer.
+        const thread = candidate && loaded.includes(candidate) ? candidate : undefined;
         const created = Bun.spawnSync(
           [tmux, "new-session", "-d", "-s", session, "-c", lane.runtime.workspace,
             // Inline rather than the alternate screen: an observer wants the
             // scrollback of what the daemon did, and the alternate screen
             // discards it on exit.
-            codex, "--remote", `unix://${socket}`, "--no-alt-screen"],
+            codex, "--remote", `unix://${socket}`, "--no-alt-screen",
+            ...(thread ? ["resume", thread] : [])],
           { stdout: "pipe", stderr: "pipe" },
         );
         if (created.exitCode !== 0) {

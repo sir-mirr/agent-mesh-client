@@ -47,7 +47,13 @@ resume=false  운영자가 새 세션을 명시적으로 골랐을 때만
 
 데몬 자신이 lane을 복원할 때 — 부팅, `config.reload`, 재활성 — 는 항상 이어간다(`RUN-005`). mesh 상대는 identity로 부르므로, 빈 세션으로 돌아온 lane은 상대가 말하던 그 이름의 낯선 상대다.
 
-Claude lane 전용이다. Codex는 세션이 app-server고 운영자가 `codex --remote`로 따로 붙으며, Antigravity는 상주 세션 자체가 없다.
+Claude lane 전용이다. Codex는 세션 본체가 app-server라 재기동 개념이 다르고, Antigravity는 상주 세션 자체가 없다.
+
+## 3.1 Codex thread 공유
+
+Codex lane의 attach는 `mesh.inbox`로 lane이 마지막으로 처리한 `conversationId`를 찾고, app-server의 `thread/loaded/list`에 그것이 살아 있는지 확인한 뒤 `codex --remote unix://<sock> resume <thread-id>`로 뷰어를 연다.
+
+`thread/list`가 아니라 `thread/loaded/list`여야 한다 — 전자는 저장된 세션이고 실행 중인 thread는 안 보인다. 그리고 loaded 목록에는 뷰어가 종료된 thread도 남는데 그쪽은 rollout이 없어 resume이 `-32600`으로 실패하고 pane이 죽는다. 그래서 id는 데몬의 turn 기록에서 얻고, loaded 목록은 살아 있는지 확인하는 데만 쓴다.
 
 ## 4. 오류
 

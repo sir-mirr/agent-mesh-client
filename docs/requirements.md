@@ -39,7 +39,7 @@
 | `RUN-007` | SHOULD | runtime 세션이 종료된 lane에서 attach는 세션을 다시 세울 수 있어야 하며, 이전 대화 이어가기와 새로 시작하기를 키보드로 고르게 해야 한다. |
 | `RUN-008` | MUST | 사람 입력을 기다리는 runtime은 `awaiting-input`으로 구분되고 화면의 질문을 함께 보고해야 한다. 진행 중인 turn과 같은 상태로 표시하면 안 된다. |
 | `OBS-001` | SHOULD | 상주 세션이 없는 runtime은 redacted 관찰 화면을 제공해야 한다. 본문·reasoning·auth code는 데몬 밖으로 내보내면 안 되고 크기만 보고해야 한다. |
-| `OBS-002` | SHOULD | 데몬이 구동하는 Codex app-server에 운영자가 같은 세션으로 붙을 수 있어야 한다. |
+| `OBS-002` | SHOULD | 데몬이 구동하는 Codex app-server에 운영자가 같은 세션으로 붙을 수 있어야 한다. 뷰어는 데몬이 실제로 돌리는 thread를 열어야 하며, 새 thread를 만들면 안 된다. |
 | `UX-006` | MUST | 비활성 lane의 Hub·Key 상태를 미설정이나 불명으로 표시하면 안 된다. 연결하지 않은 상태와 잘못 설정된 상태는 구분되어야 한다. |
 | `UX-007` | MUST | 데몬 reload를 수반하는 TUI 동작은 진행 표시를 보여야 한다. 화면이 멈춘 채로 두면 안 된다. |
 | `UX-008` | MUST | lane 제거는 Mesh identity가 Hub에 남는다는 것과, 이 호스트의 키가 있는 한 다시 추가할 수 있다는 것을 결정 전에 알려야 한다. |

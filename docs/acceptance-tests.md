@@ -37,7 +37,7 @@
 | `AT-029` | `RUN-007` | 세션이 없는 Claude lane에서 attach가 이어가기/새로 시작을 묻고, 고른 대로 세션을 세운 뒤 붙는다. |
 | `AT-030` | `RUN-008` | 승인 대기 중인 runtime이 `awaiting-input`과 화면의 질문을 보고하고, 응답 후 `running`으로 돌아온다. |
 | `AT-031` | `OBS-001` | Antigravity lane의 관찰 화면이 turn 상태와 글자 수만 보이고 본문을 보이지 않는다. |
-| `AT-032` | `OBS-002` | Codex lane에 attach하면 데몬이 쓰는 app-server에 붙고, 붙어 있는 동안 mesh turn이 정상 처리된다. |
+| `AT-032` | `OBS-002` | Codex lane에 attach하면 데몬이 돌리는 thread가 열리고, 그 뒤 도착한 mesh turn과 응답이 관찰 화면에 나타난다. |
 | `AT-033` | `UX-006`, `UX-007` | 비활성 lane이 Hub·Key를 미설정/불명으로 표시하지 않고, enable·disable·remove가 진행 표시와 함께 끝난다. |
 | `AT-034` | `UX-008`, `SEC-003` | lane 제거 확인 화면이 identity 잔존과 재추가 조건을 알리고, 같은 키를 가진 호스트에서 재추가가 승인 없이 복구된다. |
 | `AT-035` | `AUD-002` | dead-letter된 event를 `outbox replay`로 다시 큐에 넣으면 첨부 확인 여부에 따라 blob 단계부터 또는 append부터 재개하고, ACKED가 아닌 event만 대상이 된다. |

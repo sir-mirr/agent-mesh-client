@@ -213,3 +213,54 @@ export async function connectWsUnix(
     closed,
   };
 }
+
+/**
+ * The threads an app-server currently has in memory, newest last.
+ *
+ * `thread/list` answers with saved sessions, which is a different set: a
+ * thread the daemon is driving right now may not be in it, and a thread from
+ * last week will be. Only `thread/loaded/list` reports what is live, and that
+ * is what an operator attaching wants to look at.
+ *
+ * Returns [] rather than throwing, since this is used to decide whether a
+ * viewer can be pointed at something -- and if it cannot, it still opens.
+ */
+export async function loadedThreadIds(socketPath: string): Promise<string[]> {
+  let resolveIds: (ids: string[]) => void = () => undefined;
+  const answered = new Promise<string[]>((resolve) => {
+    resolveIds = resolve;
+  });
+  let connection: WsUnixConnection | null = null;
+  try {
+    connection = await connectWsUnix(socketPath, "/rpc", {
+      onMessage: (payload) => {
+        const message = JSON.parse(payload) as {
+          id?: unknown;
+          result?: { data?: unknown };
+        };
+        if (message.id !== "loaded") return;
+        const data = message.result?.data;
+        resolveIds(Array.isArray(data) ? data.filter((id): id is string => typeof id === "string") : []);
+      },
+      onClose: () => resolveIds([]),
+    });
+    connection.send(JSON.stringify({
+      id: "initialize",
+      method: "initialize",
+      params: {
+        clientInfo: { name: "agent_mesh_client", title: "Agent Mesh Client", version: "0.1.0" },
+        capabilities: null,
+      },
+    }));
+    connection.send(JSON.stringify({ method: "initialized", params: {} }));
+    connection.send(JSON.stringify({ id: "loaded", method: "thread/loaded/list", params: {} }));
+    return await Promise.race([
+      answered,
+      new Promise<string[]>((resolve) => setTimeout(() => resolve([]), 5_000)),
+    ]);
+  } catch {
+    return [];
+  } finally {
+    connection?.close();
+  }
+}
