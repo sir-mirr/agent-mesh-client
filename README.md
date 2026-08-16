@@ -28,7 +28,7 @@ Channel round-trips bypass the Hub, so a Hub outage does not stop a local reply.
 
 Each lane holds its conversation open from start and continues the previous one across restarts, so attaching never depends on traffic having arrived first.
 
-**Status:** `v0.1.0-dev`, macOS and Linux. Contracts pinned to `@agent-mesh/contracts#v0.7.6`; the platform repository owns that contract and its `SPEC.md` is normative.
+**Status:** `v0.1.0-dev`, macOS and Linux. Contracts pinned to `@agent-mesh/contracts#v0.8.1`; the platform repository owns that contract and its `SPEC.md` is normative.
 
 ---
 

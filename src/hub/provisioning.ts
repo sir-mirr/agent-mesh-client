@@ -33,6 +33,32 @@ export class AgentIdentityConflictError extends Error {
 }
 
 /**
+ * The route-table version the running Hub answers with, or null.
+ *
+ * Read rather than inferred from a missing field, because absence is
+ * ambiguous: a Hub too old to report an identity's `type` omits it, and a Hub
+ * that does report it answers `null` for an identity registered through
+ * `mesh.register`, which never wrote one. Probing for absence cannot tell
+ * those apart, and the one it guesses wrong is the one where the check
+ * quietly stops running.
+ *
+ * Unsigned, and served by the process rather than by a source tree, so it
+ * describes the deployment being talked to.
+ */
+export async function hubSurfaceVersion(endpoints: HubEndpoints): Promise<number | null> {
+  try {
+    const response = await fetch(`${endpoints.apiHttp}/api/v1/capabilities`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { surface?: { version?: unknown } };
+    return typeof body.surface?.version === "number" ? body.surface.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The type the Hub has registered for an identity, asked over HTTP.
  *
  * Used when `/keys` does not carry the type -- Hubs that predate the field.

@@ -17,7 +17,11 @@ import { runRuntimeObserver } from "./runtime/observer";
 import { ensureAttachTarget, selfCommand } from "./runtime/attach";
 import { runDiscordDriver } from "./channel-driver/discord";
 import { resolveHubEndpoints } from "./hub/endpoints";
-import { lookupAgentIdentity, lookupRegisteredType } from "./hub/provisioning";
+import {
+  hubSurfaceVersion,
+  lookupAgentIdentity,
+  lookupRegisteredType,
+} from "./hub/provisioning";
 import { SecretStore } from "./config/secrets";
 import { IdentityKeyManager } from "./identity/key-manager";
 import {
@@ -409,30 +413,32 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       // disagreeing with the registration, which misnames the agent here
       // instead. Neither side knows which one is intended -- only the person
       // running it does, so this stops and says both.
-      // Three sources, narrowest requirement first.
+      // Which source is trusted depends on what the running Hub answers, not
+      // on which fields happen to be present. Absence is ambiguous: a Hub too
+      // old to report an identity's `type` omits it, and a Hub that reports it
+      // answers nothing for an identity registered through `mesh.register`,
+      // which never wrote one. Guessing wrong silently stops the check.
       //
-      //   /keys `type`      no key, no approval, no connection -- always works
-      //                     where the Hub has the field
-      //   local record      written when this host provisioned the identity
-      //   signed HTTP       needs the key to be approved: `mesh.list_agents`
-      //                     answers -32014 to a pending one
-      //
-      // The last is why this can still come back empty on an older Hub while
-      // reclaiming an identity whose key is not approved yet. The check is
-      // skipped there rather than blocking the add, and the mismatch it would
-      // have caught surfaces when the operator looks at the lane.
+      //   surface >= 2   the Hub's answer is final. No type means the identity
+      //                  has none, and there is nothing to enforce.
+      //   otherwise      older Hub: the type this host recorded when it
+      //                  provisioned the identity, then a signed
+      //                  `mesh.list_agents` -- which a pending key cannot
+      //                  make, so the check is skipped for one rather than
+      //                  blocking the add.
+      const endpoints = resolveHubEndpoints(current.hub.base_url, current.hub);
+      const surface = await hubSurfaceVersion(endpoints);
       const registeredType =
-        registered.type ??
-        held.agentType ??
-        (await lookupRegisteredType(
-          resolveHubEndpoints(current.hub.base_url, current.hub),
-          identity,
-          async (method, rawParams) =>
-            new IdentityKeyManager(identity, new SecretStore(options.secretDirectory)).signRequest(
-              method,
-              rawParams,
-            ),
-        ));
+        surface !== null && surface >= 2
+          ? registered.type ?? null
+          : registered.type ??
+            held.agentType ??
+            (await lookupRegisteredType(endpoints, identity, async (method, rawParams) =>
+              new IdentityKeyManager(
+                identity,
+                new SecretStore(options.secretDirectory),
+              ).signRequest(method, rawParams),
+            ));
       if (registeredType && registeredType !== agentType) {
         throw new Error(
           `Agent Identity ${identity} is registered as ${registeredType}; ` +

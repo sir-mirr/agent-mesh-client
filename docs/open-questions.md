@@ -16,7 +16,7 @@
 | Codex | Codex CLI 0.147.0-alpha.6.5 공식 App Server stdio에서 start/resume/final output 확인 |
 | Antigravity | `agy` 1.1.13 live one-shot JSON 확인, 30분 timeout, 고정 turn reset 없음 |
 | 보안 profile | sandboxed/workspace/unrestricted; unrestricted는 명시적 risk acknowledgment 필수 |
-| Contract | 공개 `sir-mirr/agent-mesh-contracts#v0.7.4`, TypeBox subpath와 byte fixtures 사용 |
+| Contract | 공개 `sir-mirr/agent-mesh-contracts#v0.8.1`, TypeBox subpath와 byte fixtures 사용 |
 | 배포 | macOS arm64/x64, Linux x64/arm64 standalone binary; GitHub Release+SHA256; 기본 `~/.local/bin` |
 | Daemon | 호스트당 하나, macOS launchd/Linux systemd user service |
 | Blob | SHA-256+정규 extension, 100 MiB/file, 32개/256 MiB/event, 180초 whole-file retry |
