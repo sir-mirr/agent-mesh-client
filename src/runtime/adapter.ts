@@ -29,6 +29,13 @@ export interface RuntimeAdapter {
    * reported and does not stop the lane; the turn path starts it again.
    */
   warmUp?(): Promise<void>;
+  /**
+   * The conversation this runtime is holding open, when it holds one.
+   *
+   * Only meaningful for a runtime whose session outlives a turn. Reported so
+   * an operator can attach to it before any message has arrived.
+   */
+  sessionThreadId?(): string | null;
 }
 
 export class RuntimeAdapterError extends Error {

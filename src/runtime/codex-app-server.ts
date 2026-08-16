@@ -108,16 +108,65 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
      * nothing else can see.
      */
     readonly socketPath?: string,
+    /**
+     * The thread this lane was last working in. Warm-up brings it back rather
+     * than opening an empty one: continuing the previous conversation is the
+     * rule for a mesh agent, since the peer addresses it by identity and a
+     * lane that returns blank is a stranger answering to that name.
+     */
+    readonly resumeThreadId?: string | null,
   ) {}
+
+  /** The thread warm-up brought up, for turns that have none of their own. */
+  #warmThread: string | null = null;
 
   /** The address an operator's `codex --remote` should connect to, if any. */
   get observeAddress(): string | null {
     return this.socketPath ? `unix://${this.socketPath}` : null;
   }
 
-  /** The app-server is the session, so a Codex lane has one from the start. */
+  /**
+   * The app-server is the session, so a Codex lane has one from the start --
+   * and a thread in it, so there is a conversation to attach to before any
+   * message arrives rather than only after one.
+   */
   async warmUp(): Promise<void> {
     await this.#ensureReady();
+    if (this.#warmThread) return;
+    if (this.resumeThreadId) {
+      try {
+        const resumed = (await this.#request("thread/resume", {
+          threadId: this.resumeThreadId,
+          cwd: this.config.workspace,
+          approvalPolicy: "never",
+          sandbox: sandboxMode(this.config),
+          ...(this.config.model ? { model: this.config.model } : {}),
+        })) as { thread?: { id?: unknown } };
+        if (typeof resumed.thread?.id === "string") {
+          this.#warmThread = resumed.thread.id;
+          return;
+        }
+      } catch (error) {
+        // A thread whose rollout is gone cannot come back, and refusing to
+        // start the lane over that would trade a lost history for no agent.
+        this.onDiagnostic?.(
+          `Codex thread ${this.resumeThreadId} could not be resumed at start`,
+          error,
+        );
+      }
+    }
+    const started = (await this.#request("thread/start", {
+      cwd: this.config.workspace,
+      approvalPolicy: "never",
+      sandboxPolicy: sandboxPolicy(this.config),
+      ...(this.config.model ? { model: this.config.model } : {}),
+    })) as { thread?: { id?: unknown } };
+    if (typeof started.thread?.id === "string") this.#warmThread = started.thread.id;
+  }
+
+  /** The conversation this lane is holding open, for callers that attach. */
+  sessionThreadId(): string | null {
+    return this.#active?.threadId ?? this.#warmThread;
   }
 
   async run(invocation: RuntimeInvocation): Promise<RuntimeResult> {
@@ -145,6 +194,9 @@ export class CodexAppServerAdapter implements RuntimeAdapter {
         threadId = null;
       }
     }
+    // The thread warm-up is holding, before opening another: an operator may
+    // already be watching it, and a new one would run the turn out of sight.
+    if (!threadId && this.#warmThread) threadId = this.#warmThread;
     if (!threadId) {
       const started = (await this.#request("thread/start", {
         cwd: this.config.workspace,

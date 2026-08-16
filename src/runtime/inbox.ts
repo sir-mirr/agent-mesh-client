@@ -251,6 +251,23 @@ export class RuntimeInbox {
    * reported idle while the runtime was mid-turn. A lane doing work has to be
    * distinguishable from one doing nothing, and the difference is here.
    */
+  /**
+   * The conversation this lane worked in most recently, if any.
+   *
+   * A lane holds one conversation per peer, so "most recent" is the one it was
+   * last talking in -- which is the one to bring back when the runtime
+   * restarts, and the one an operator attaching expects to see.
+   */
+  latestConversationId(): string | null {
+    const row = this.#db()
+      .query<{ conversation_id: string | null }, []>(
+        `SELECT conversation_id FROM runtime_turns
+         WHERE conversation_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get();
+    return row?.conversation_id ?? null;
+  }
+
   countsByState(): Record<string, number> {
     const rows = this.#db()
       .query<{ state: string; count: number }, []>(

@@ -17,7 +17,10 @@ import { loadedThreadIds } from "./ws-unix-client";
 export interface AttachContext {
   lane: LaneConfig;
   runtimeDirectory: string;
-  /** The lane's most recent runtime conversation, for runtimes that have one. */
+  /**
+   * The conversation to open. The daemon reports the one it is holding, which
+   * exists from lane start -- so this is set before any message has arrived.
+   */
   conversationId?: string | null | undefined;
   /** Session the daemon already owns, when it owns one. */
   daemonSession?: string | null | undefined;
@@ -123,14 +126,13 @@ export async function ensureAttachTarget(context: AttachContext): Promise<string
       context.conversationId && loaded.includes(context.conversationId)
         ? context.conversationId
         : undefined;
-    // No thread of the daemon's to join means the lane has not handled a turn
-    // yet, so the viewer would open an empty one and stay there -- the turns
-    // that arrive later run in the daemon's thread, not this one. Said here
-    // because the screen it produces looks like a working session.
+    // The daemon holds a conversation from lane start, so this is normally
+    // set. When it is not -- a server that dropped the thread, a lane still
+    // coming up -- opening a viewer anyway would put it on a thread of its
+    // own, where the turns that arrive later are not.
     if (!thread) {
       throw new AttachUnavailableError(
-        "This agent has no conversation running yet. Its first turn opens one; " +
-          "attach after that and this will show the work.",
+        "This agent's conversation is not up yet. Try again in a moment.",
       );
     }
     createSession(tmux, session, workspace, [

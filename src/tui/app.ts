@@ -551,6 +551,8 @@ interface DashboardLane {
     lastError?: string | null;
     /** The question a blocked runtime is showing, when it is blocked. */
     prompt?: string | null;
+    /** The conversation a session-holding runtime has open. */
+    threadId?: string | null;
   };
   outbox: { pending: number; retry: number; deadLetter: number; warning: boolean };
   channels: Array<{
@@ -843,16 +845,11 @@ async function attachAgentRuntime(
 
   let session: string;
   try {
-    const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
-      lane_id: agent.lane_id,
-      limit: 20,
-    }).catch(() => [])) as Array<{ conversationId?: string | null }>;
     session = await withProgress("Opening the session…", async () =>
       ensureAttachTarget({
         lane,
         runtimeDirectory: options.runtimeDirectory,
-        conversationId: turns.find((turn) => typeof turn.conversationId === "string")
-          ?.conversationId,
+        conversationId: agent.runtime_status.threadId,
         daemonSession: agent.runtime_status.tmuxSession ?? null,
         selfCommand: selfCommand(),
       }),

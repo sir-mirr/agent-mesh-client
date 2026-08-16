@@ -53,7 +53,7 @@ Claude lane 전용이다. Codex는 세션 본체가 app-server라 재기동 개�
 
 Codex lane의 attach는 `mesh.inbox`로 lane이 마지막으로 처리한 `conversationId`를 찾고, app-server의 `thread/loaded/list`에 그것이 살아 있는지 확인한 뒤 `codex --remote unix://<sock> resume <thread-id>`로 뷰어를 연다.
 
-lane이 아직 turn을 처리한 적이 없으면 붙을 thread가 없다. 그때 뷰어를 그냥 열면 자기 thread를 하나 만들고 거기 머무는데, 나중에 도착하는 turn은 데몬 thread에서 돌아 화면에 안 나타난다 — 동작하는 세션처럼 보이는 빈 화면이라, attach는 열지 않고 그 사실을 말한다.
+데몬은 lane 기동과 함께 대화를 하나 열어 둔다 — 이전 대화가 있으면 그것을 `thread/resume`하고, 없을 때만 새로 시작한다(`RUN-005`). 그래서 메시지가 한 번도 오간 적 없는 lane에도 붙을 대화가 있고, "turn을 먼저 흘려야 attach가 쓸모 있다"는 순서 규칙이 없다. 그 thread id는 `lane.list`의 `runtime_status.threadId`로 보고된다.
 
 데몬이 뷰어의 thread를 대신 채택하지는 않는다. peer와의 대화는 history를 갖고 있고, 사람이 열어둔 thread를 그 대화로 삼으면 수동 작업 맥락이 peer 대화에 섞인다.
 

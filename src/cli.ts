@@ -278,15 +278,17 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
       (item) => item.id === command || item.identity === command,
     );
     if (!lane) throw new Error(`Unknown lane: ${command}`);
-    const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
-      lane_id: lane.id,
-      limit: 20,
-    }).catch(() => [])) as Array<{ conversationId?: string | null }>;
+    // From the daemon, which holds the conversation open from lane start.
+    // Reading it off past turns meant a lane that had not answered anything
+    // yet looked like it had nothing to attach to.
+    const lanes = (await requestControl(options.runtimeDirectory, "lane.list", {})) as Array<{
+      lane_id: string;
+      runtime_status?: { threadId?: string | null };
+    }>;
     const session = await ensureAttachTarget({
       lane,
       runtimeDirectory: options.runtimeDirectory,
-      conversationId: turns.find((turn) => typeof turn.conversationId === "string")
-        ?.conversationId,
+      conversationId: lanes.find((item) => item.lane_id === lane.id)?.runtime_status?.threadId,
       selfCommand: selfCommand(),
     });
     const child = Bun.spawn([tmux, "attach-session", "-t", session], {

@@ -28,11 +28,17 @@ export interface AgentMeshDaemonOptions {
  * clears that. Idle then covered both "nothing to do" and "working", which
  * are the two things an operator is trying to tell apart.
  */
-function turnDrivenRuntimeState(controller: LaneController | undefined): { state: string } {
+function turnDrivenRuntimeState(
+  controller: LaneController | undefined,
+  // Reported so an operator can attach before the lane has handled anything:
+  // warm-up holds a conversation open, and without surfacing it the only way
+  // to find one was to look at turns that do not exist yet.
+  threadId?: string | null,
+): { state: string; threadId?: string } {
   const counts = controller?.runtimeInbox.countsByState() ?? {};
-  if ((counts.RUNNING ?? 0) > 0) return { state: "running" };
-  if ((counts.PENDING ?? 0) > 0) return { state: "queued" };
-  return { state: "idle" };
+  const state =
+    (counts.RUNNING ?? 0) > 0 ? "running" : (counts.PENDING ?? 0) > 0 ? "queued" : "idle";
+  return threadId ? { state, threadId } : { state };
 }
 
 export class AgentMeshDaemon {
@@ -192,6 +198,7 @@ export class AgentMeshDaemon {
       controller.config.runtime.kind === "codex"
         ? appServerSocketPath(this.#runtimeDirectory, controller.config.id)
         : undefined,
+      controller.runtimeInbox.latestConversationId(),
     );
     const worker = new RuntimeWorker({
       laneId: controller.config.id,
@@ -457,7 +464,10 @@ export class AgentMeshDaemon {
               runtime_status: !lane.enabled
                 ? { state: "disabled" }
                 : this.#claudeSupervisors.get(lane.id)?.status ??
-                  turnDrivenRuntimeState(controller),
+                  turnDrivenRuntimeState(
+                    controller,
+                    this.#runtimeWorkers.get(lane.id)?.options.adapter.sessionThreadId?.() ?? null,
+                  ),
               channels: lane.channels.map((channel) => ({
                 id: channel.id,
                 provider: channel.provider,
