@@ -27,6 +27,18 @@ export function laneSocketName(laneId: string): string {
   return `lane-${digest.slice(0, 24)}.sock`;
 }
 
+/**
+ * The tmux session for a lane, named after the agent rather than a digest of
+ * its id. `tmux ls` is where someone looks to see which window belongs to
+ * which agent, and `mesh-lane-8ba3424e55e1` does not answer that. Identities
+ * are `[A-Za-z0-9-]` and unique per host, so the readable name is also the
+ * unambiguous one.
+ */
+export function laneTmuxSession(identity: string): string {
+  if (identity.length === 0) throw new Error("Agent Identity must not be empty");
+  return `mesh-lane-${identity}`;
+}
+
 export function laneStorageName(laneId: string): string {
   if (laneId.length === 0) throw new Error("lane ID must not be empty");
   const digest = createHash("sha256").update(laneId, "utf8").digest("hex");

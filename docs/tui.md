@@ -71,8 +71,14 @@ agent-mesh up|down|restart|attach|status|logs
 | Runtime | attach가 여는 것 |
 |---|---|
 | Claude | tmux의 CLI 세션. 없으면 다시 세운다 |
-| Codex | 데몬이 쓰는 app-server에 붙는 `codex --remote` 관찰자 |
+| Codex | 데몬이 돌리는 thread에 붙는 `codex --remote` 뷰어 |
 | Antigravity | redacted 관찰 화면. 상주 세션이 없다 |
+
+세 경우의 판단은 TUI와 CLI가 같은 코드(`src/runtime/attach.ts`)를 쓴다. CLI에만 있던 동안 TUI의 attach는 셋 중 Claude 하나에만 동작했다.
+
+tmux 세션 이름은 `mesh-lane-<identity>`다. `tmux ls`는 어느 창이 어느 agent인지 보려고 여는 곳이라 digest는 답이 되지 않는다. identity는 `[A-Za-z0-9-]`이고 호스트 안에서 유일하므로 읽히는 이름이 곧 유일한 이름이다. 같은 이름을 다른 것이 쥐고 있으면 붙지 않고 오류를 보인다 — 남의 세션에 붙는 것은 agent가 이상하게 동작하는 것처럼 보인다.
+
+attach가 실패하는 이유는 그대로 보인다. app-server가 아직 안 떴다거나(첫 turn에 뜬다) 이름이 점유됐다거나 하는 것은 "붙을 수 없음"보다 훨씬 쓸모 있는 정보다.
 
 Claude 세션이 없을 때 attach는 이어가기와 새로 시작하기를 좌/우 키로 묻는다(`RUN-007`). 기본은 이어가기다 — mesh 상대가 identity로 부르므로 빈 세션은 같은 이름의 낯선 상대가 된다.
 

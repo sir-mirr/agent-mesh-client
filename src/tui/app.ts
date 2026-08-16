@@ -12,6 +12,7 @@ import { probeHub, resolveHubEndpoints, type HubEndpoints } from "../hub/endpoin
 import { lookupAgentIdentity } from "../hub/provisioning";
 import { SecretStore } from "../config/secrets";
 import { IdentityKeyManager } from "../identity/key-manager";
+import { ensureAttachTarget, selfCommand } from "../runtime/attach";
 import { installUserService } from "../service/user-service";
 import { IDENTITY_RE } from "@agent-mesh/contracts";
 
@@ -795,27 +796,29 @@ async function attachAgentRuntime(
   agent: DashboardLane,
   options: TuiOptions,
 ): Promise<void> {
-  if (!agent.runtime_status.tmuxSession) {
-    // Exiting the CLI destroys the tmux session, so there is nothing left to
-    // attach to and the old message ended there -- correct and useless, since
-    // the thing the operator wants is the session back.
-    if (agent.runtime !== "claude" || !agent.enabled) {
-      process.stdout.write(
-        agent.enabled
-          ? "This runtime has no attachable session.\n"
-          : "This agent is disabled. Enable it before attaching.\n",
-      );
-      try {
-        await ask(reader, "Press Enter to go back", undefined, true);
-      } catch (error) {
-        if (!(error instanceof BackNavigation)) throw error;
-      }
-      return;
-    }
-    heading(`Start runtime · ${agent.identity}`);
-    let resume: "resume" | "fresh";
+  const lane = (await new ConfigStore(options.configFile).load()).lanes.find(
+    (item) => item.id === agent.lane_id,
+  );
+  if (!lane) return;
+  if (!agent.enabled) {
+    process.stdout.write("This agent is disabled. Enable it before attaching.\n");
     try {
-      resume = await selectHorizontal<"resume" | "fresh">(
+      await ask(reader, "Press Enter to go back", undefined, true);
+    } catch (error) {
+      if (!(error instanceof BackNavigation)) throw error;
+    }
+    return;
+  }
+
+  // Only Claude keeps a CLI that exiting destroys, so it is the only one with
+  // a session to rebuild -- Codex's session lives on the app-server and
+  // Antigravity has none. Offering to continue a conversation for the other
+  // two would be offering something they do not have.
+  if (lane.runtime.kind === "claude" && !agent.runtime_status.tmuxSession) {
+    heading(`Start runtime · ${agent.identity}`);
+    let choice: "resume" | "fresh";
+    try {
+      choice = await selectHorizontal<"resume" | "fresh">(
         reader,
         "Previous conversation",
         [
@@ -830,29 +833,48 @@ async function attachAgentRuntime(
     await withProgress("Starting the runtime session…", async () => {
       await requestControl(options.runtimeDirectory, "runtime.start", {
         lane_id: agent.lane_id,
-        resume: resume === "resume",
+        resume: choice === "resume",
       });
     });
     const started = ((await requestControl(options.runtimeDirectory, "lane.list", {})) as
       DashboardLane[]).find((item) => item.lane_id === agent.lane_id);
-    if (!started?.runtime_status.tmuxSession) {
-      process.stdout.write(
-        `Could not start the session: ${started?.runtime_status.lastError ?? "unknown error"}\n`,
-      );
-      try {
-        await ask(reader, "Press Enter to go back", undefined, true);
-      } catch (error) {
-        if (!(error instanceof BackNavigation)) throw error;
-      }
-      return;
-    }
-    agent = started;
+    if (started) agent = started;
   }
+
+  let session: string;
+  try {
+    const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
+      lane_id: agent.lane_id,
+      limit: 20,
+    }).catch(() => [])) as Array<{ conversationId?: string | null }>;
+    session = await withProgress("Opening the session…", async () =>
+      ensureAttachTarget({
+        lane,
+        runtimeDirectory: options.runtimeDirectory,
+        conversationId: turns.find((turn) => typeof turn.conversationId === "string")
+          ?.conversationId,
+        daemonSession: agent.runtime_status.tmuxSession ?? null,
+        selfCommand: selfCommand(),
+      }),
+    );
+  } catch (error) {
+    // The reasons are specific -- a server not listening yet, a name held by
+    // something else -- and they are what the operator needs, so they are
+    // shown rather than turned into "could not attach".
+    writePanel("Cannot attach", [
+      paint(YELLOW, error instanceof Error ? error.message : String(error)),
+    ]);
+    try {
+      await ask(reader, "\nPress Enter to go back", undefined, true);
+    } catch (backError) {
+      if (!(backError instanceof BackNavigation)) throw backError;
+    }
+    return;
+  }
+
   const tmux = Bun.which("tmux");
   if (!tmux) throw new Error("tmux is not available in the TUI environment");
   reader.pause();
-  const session = agent.runtime_status.tmuxSession;
-  if (!session) throw new Error("Runtime session disappeared before attaching");
   const child = Bun.spawn([tmux, "attach-session", "-t", session], {
     stdin: "inherit",
     stdout: "inherit",

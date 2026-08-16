@@ -1,7 +1,7 @@
 import { chmod, mkdir, open, rename } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { LaneConfig } from "../config/types";
-import { laneStorageName } from "../config/paths";
+import { laneStorageName, laneTmuxSession } from "../config/paths";
 
 export interface ClaudeSupervisorOptions {
   lane: LaneConfig;
@@ -72,8 +72,7 @@ export class ClaudeSupervisor {
   #status: ClaudeSupervisorStatus;
 
   constructor(readonly options: ClaudeSupervisorOptions) {
-    const storage = laneStorageName(options.lane.id);
-    this.tmuxSession = `mesh-${storage}`;
+    this.tmuxSession = laneTmuxSession(options.lane.identity);
     this.mcpConfigPath = resolve(options.stateDirectory, "claude-mcp.json");
     this.#status = {
       state: "stopped",

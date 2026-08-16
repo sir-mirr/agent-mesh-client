@@ -14,7 +14,7 @@ import {
 import { runTui } from "./tui/app";
 import { runClaudeChannelMcp } from "./runtime/claude-channel-mcp";
 import { runRuntimeObserver } from "./runtime/observer";
-import { loadedThreadIds } from "./runtime/ws-unix-client";
+import { ensureAttachTarget, selfCommand } from "./runtime/attach";
 import { runDiscordDriver } from "./channel-driver/discord";
 import { resolveHubEndpoints } from "./hub/endpoints";
 import { lookupAgentIdentity } from "./hub/provisioning";
@@ -274,98 +274,21 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
   if (group === "attach" && command && !value) {
     const tmux = Bun.which("tmux");
     if (!tmux) throw new Error("tmux is not installed");
-    const session = `mesh-${laneStorageName(command)}`;
     const lane = (await new ConfigStore(options.configFile).load()).lanes.find(
-      (item) => item.id === command,
+      (item) => item.id === command || item.identity === command,
     );
-    // Claude's session is created by its supervisor and holds the CLI itself.
-    // Codex has no such process: the daemon drives an app-server, and what an
-    // operator attaches to is a second client of that same server. It is
-    // created on demand here so attaching does not depend on having asked for
-    // a session earlier.
-    if (lane?.runtime.kind === "codex") {
-      const socket = appServerSocketPath(options.runtimeDirectory, command);
-      // `Bun.file().exists()` is false for a socket -- it answers for regular
-      // files. Ask the filesystem whether the path exists at all.
-      const listening = await stat(socket).then(() => true, () => false);
-      if (!listening) {
-        throw new Error(
-          `Codex app-server is not listening for ${command}. Start the lane first: agent-mesh up`,
-        );
-      }
-      const codex = lane.runtime.command ?? Bun.which("codex");
-      if (!codex) throw new Error("codex is not installed");
-      const running = Bun.spawnSync([tmux, "has-session", "-t", session], {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      if (running.exitCode !== 0) {
-        // Point the viewer at the thread the daemon is driving. Without this
-        // the TUI opens one of its own, so two threads run on one server and
-        // the operator watches the empty one -- attached, and shown none of
-        // the work.
-        //
-        // The id comes from the lane's turns rather than from the server's
-        // loaded list, because that list also holds threads whose viewer has
-        // exited: they stay loaded with no rollout behind them, and resuming
-        // one fails and takes the pane down with it. What the daemon last
-        // worked on is a fact only the daemon has.
-        const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
-          lane_id: command,
-          limit: 20,
-        })) as Array<{ conversationId?: string | null }>;
-        const candidate = turns.find((turn) => typeof turn.conversationId === "string")
-          ?.conversationId;
-        const loaded = await loadedThreadIds(socket);
-        // Still has to be live: a lane idle long enough for the server to drop
-        // the thread resumes from disk, which is fine, but one the server
-        // never had is not something to hand the viewer.
-        const thread = candidate && loaded.includes(candidate) ? candidate : undefined;
-        const created = Bun.spawnSync(
-          [tmux, "new-session", "-d", "-s", session, "-c", lane.runtime.workspace,
-            // Inline rather than the alternate screen: an observer wants the
-            // scrollback of what the daemon did, and the alternate screen
-            // discards it on exit.
-            codex, "--remote", `unix://${socket}`, "--no-alt-screen",
-            ...(thread ? ["resume", thread] : [])],
-          { stdout: "pipe", stderr: "pipe" },
-        );
-        if (created.exitCode !== 0) {
-          throw new Error(
-            `Failed to open a Codex observer session: ${new TextDecoder().decode(created.stderr).trim()}`,
-          );
-        }
-      }
-    }
-    // Antigravity keeps no resident process -- one `agy --print` child per
-    // turn -- so there is no session to join. What an operator attaches to is
-    // the redacted queue view, created on demand like the Codex observer.
-    if (lane?.runtime.kind === "antigravity") {
-      const running = Bun.spawnSync([tmux, "has-session", "-t", session], {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      if (running.exitCode !== 0) {
-        const created = Bun.spawnSync(
-          [tmux, "new-session", "-d", "-s", session, "-n", "observe",
-            "-c", lane.runtime.workspace,
-            // Compiled, argv[1] is not a script and the binary re-invokes
-            // itself; under `bun run src/cli.ts` it is, and bun needs to be
-            // handed the entry point again.
-            ...(process.argv[1]?.endsWith(".ts")
-              ? [process.execPath, process.argv[1]]
-              : [process.execPath]),
-            "runtime", "observe", "--lane", command,
-            "--runtime-dir", options.runtimeDirectory],
-          { stdout: "pipe", stderr: "pipe" },
-        );
-        if (created.exitCode !== 0) {
-          throw new Error(
-            `Failed to open an Antigravity observer session: ${new TextDecoder().decode(created.stderr).trim()}`,
-          );
-        }
-      }
-    }
+    if (!lane) throw new Error(`Unknown lane: ${command}`);
+    const turns = (await requestControl(options.runtimeDirectory, "mesh.inbox", {
+      lane_id: lane.id,
+      limit: 20,
+    }).catch(() => [])) as Array<{ conversationId?: string | null }>;
+    const session = await ensureAttachTarget({
+      lane,
+      runtimeDirectory: options.runtimeDirectory,
+      conversationId: turns.find((turn) => typeof turn.conversationId === "string")
+        ?.conversationId,
+      selfCommand: selfCommand(),
+    });
     const child = Bun.spawn([tmux, "attach-session", "-t", session], {
       stdin: "inherit",
       stdout: "inherit",

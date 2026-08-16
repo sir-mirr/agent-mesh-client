@@ -36,6 +36,8 @@
 | `RUN-004` | MUST | inbound mesh 메시지는 runtime 세션에 자동으로 전달되어야 한다. 세션이 조회해야만 보이는 상태를 전달로 취급하면 안 된다. |
 | `RUN-005` | MUST | 데몬이 Claude runtime을 재기동할 때(부팅, config reload, 재활성) 이전 대화를 이어야 한다. 운영자가 명시적으로 새 세션을 고른 경우에만 비워야 한다. |
 | `RUN-006` | MUST | runtime 기동 대기는 세션이 더 이상 입력을 요구하지 않는 시점에 끝나야 한다. 고정 시간 대기로 대체하면 안 된다. |
+| `UX-009` | MUST | tmux 세션 이름은 `mesh-lane-<identity>`여야 한다. 이름이 이미 점유돼 있으면 그 세션에 붙지 말고 오류를 보여야 한다. |
+| `UX-010` | MUST | attach의 runtime별 동작은 TUI와 CLI가 같아야 한다. |
 | `RUN-007` | SHOULD | runtime 세션이 종료된 lane에서 attach는 세션을 다시 세울 수 있어야 하며, 이전 대화 이어가기와 새로 시작하기를 키보드로 고르게 해야 한다. |
 | `RUN-008` | MUST | 사람 입력을 기다리는 runtime은 `awaiting-input`으로 구분되고 화면의 질문을 함께 보고해야 한다. 진행 중인 turn과 같은 상태로 표시하면 안 된다. |
 | `OBS-001` | SHOULD | 상주 세션이 없는 runtime은 redacted 관찰 화면을 제공해야 한다. 본문·reasoning·auth code는 데몬 밖으로 내보내면 안 되고 크기만 보고해야 한다. |
