@@ -206,6 +206,14 @@ bun run e2e:harness -- --ready-file /tmp/mesh-ready.json --keep-state
 AGENT_MESH_E2E_READY_FILE=/tmp/mesh-ready.json bun run test:e2e:live
 ```
 
+저장소 간 공유 시나리오(계약의 `E2E_SCENARIOS`)는 전용 러너가 있습니다. 하니스를 직접 띄우며, 순서대로 도는 집합에는 clean mesh 하나를, mesh 조건을 명시한 시나리오에는 각각 별도 mesh를 세웁니다.
+
+```sh
+bun run test:e2e:scenarios
+```
+
+플랫폼 저장소가 이 저장소 옆에 있다고 가정하고, 다른 위치면 `AGENT_MESH_E2E_PLATFORM`으로 지정합니다. 불일치는 계약 결함이므로 여기서 고치지 않고 플랫폼 쪽에 보고합니다.
+
 ### 문서
 
 | | |

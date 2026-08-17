@@ -206,6 +206,14 @@ bun run e2e:harness -- --ready-file /tmp/mesh-ready.json --keep-state
 AGENT_MESH_E2E_READY_FILE=/tmp/mesh-ready.json bun run test:e2e:live
 ```
 
+The shared cross-repository scenarios (`E2E_SCENARIOS` in the contract) have their own runner, which starts the platform harness itself — one clean mesh for the ordered set, and a separate one for any scenario that names a mesh shape:
+
+```sh
+bun run test:e2e:scenarios
+```
+
+It expects the platform checkout beside this one; `AGENT_MESH_E2E_PLATFORM` points elsewhere. A mismatch is a contract defect and is reported to the platform side rather than fixed here.
+
 ### Documents
 
 | | |

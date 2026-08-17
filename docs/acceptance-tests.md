@@ -41,6 +41,9 @@
 | `AT-033` | `UX-006`, `UX-007` | 비활성 lane이 Hub·Key를 미설정/불명으로 표시하지 않고, enable·disable·remove가 진행 표시와 함께 끝난다. |
 | `AT-034` | `UX-008`, `SEC-003` | lane 제거 확인 화면이 identity 잔존과 재추가 조건을 알리고, 같은 키를 가진 호스트에서 재추가가 승인 없이 복구된다. |
 | `AT-042` | `AUD-005` | mesh 대역 안의 미할당 코드는 dead-letter로, 대역 밖 코드는 재시도로 처리한다. |
+| `AT-043` | `CON-002` | `E2E_SCENARIOS` 전체가 재생되고, `expectStored`는 verb 단위 skip으로 보고된다. 러너가 구현하지 않은 verb는 통과가 아니라 실패로 보고된다. |
+| `AT-044` | `CON-003` | `receiveLeaseSeconds`를 요구하는 시나리오는 그 lease의 별도 mesh에서 돌아 lease 만료 후 재전달과 ack 이후 소멸을 모두 보인다. |
+| `AT-045` | `CON-004` | 불일치가 나온 시나리오는 실패로 남고, 통과시키기 위한 요청 변형이 러너에 들어가지 않는다. |
 | `AT-041` | `SEC-005` | 등록 응답이 승인된 key를 돌려주더라도 그 지문이 `/keys`에 없으면 lane이 연결로 진행하지 않고 conflict로 멈춘다. |
 | `AT-040` | `SEC-004` | 등록된 identity를 다른 runtime으로 되찾으려 하면 두 type을 밝히며 멈추고, 맞는 runtime으로는 되찾아진다. Hub 쪽 type은 어느 경우에도 덮어쓰지 않는다. |
 | `AT-039` | `OBS-004` | Antigravity lane에 attach하면 lane이 쓰던 대화가 이력과 함께 열리고, 열린 채로 도착한 turn도 저장돼 다시 열었을 때 보인다. |
