@@ -272,6 +272,20 @@ async function http(
   return { status: response.status, body: parsed };
 }
 
+/**
+ * A socket a scenario is deliberately keeping open.
+ *
+ * `since` counts pushes from the last `expectPushed` rather than from connect.
+ * A held socket receives at any time, so "how many" means nothing without
+ * "since when", and a cumulative count would make each expectation depend on
+ * the steps above it -- inserting one step would falsify every one below.
+ */
+interface Held {
+  socket: WebSocket;
+  since: () => number;
+  clear: () => void;
+}
+
 interface RpcOutcome {
   error: { code: number; message: string; data?: any } | null;
   result: unknown;
@@ -300,8 +314,11 @@ async function rpc(
    * impatient.
    */
   expectDelivered: number | null = null,
-): Promise<RpcOutcome & { delivered: number }> {
+  /** Keep the socket open and return it, for `hold`. */
+  keepOpen = false,
+): Promise<RpcOutcome & { delivered: number; held: Held | null }> {
   const socket = new WebSocket(mesh.rpcWs);
+  let kept: Held | null = null;
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("hub socket open timed out")), 15_000);
@@ -329,6 +346,7 @@ async function rpc(
     // returns: the hub may push before the response is written, and a listener
     // attached later would miss exactly the delivery under test.
     let delivered = 0;
+    let cleared = 0;
     socket.addEventListener("message", (event) => {
       let message: any;
       try {
@@ -368,12 +386,21 @@ async function rpc(
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
-    return { ...outcome, delivered };
+    if (keepOpen && !outcome.error) {
+      // The counter is read through a getter so `expectPushed` sees pushes that
+      // arrive after this call returns, and can clear it without the closure
+      // above losing track.
+      kept = { socket, since: () => delivered - cleared, clear: () => (cleared = delivered) };
+      return { ...outcome, delivered, held: kept };
+    }
+    return { ...outcome, delivered, held: null };
   } finally {
-    try {
-      socket.close();
-    } catch {
-      // Closing a socket that never opened is not a scenario outcome.
+    if (!kept) {
+      try {
+        socket.close();
+      } catch {
+        // Closing a socket that never opened is not a scenario outcome.
+      }
     }
   }
 }
@@ -534,25 +561,21 @@ async function runStep(
   registry: Registry,
   leases: Map<string, string[]>,
   bindings: Map<string, string>,
+  held: Map<string, Held>,
   raw: Step,
 ): Promise<void> {
-  // Resolved once, here, for every verb. The contract names `path`, `body` and
-  // `expect.body` as the substitutable places; doing it per-verb is how a step
-  // ends up quietly unsubstituted while still reporting green.
+  // Every string in the step, rather than the three places the contract names.
   //
-  // Read through a loose view rather than typing `step` loosely. An earlier
-  // draft made the whole step `Step & Record<string, any>`, which silently
-  // defeated the exhaustiveness check below -- deleting a verb's case still
-  // typechecked, so the guard against an unhandled verb was decoration.
-  const loose = raw as { path?: string; body?: unknown; expect?: ExpectHttp };
-  const step: Step = {
-    ...raw,
-    ...(loose.path !== undefined ? { path: substitute(loose.path, bindings) } : {}),
-    ...(loose.body !== undefined ? { body: substitute(loose.body, bindings) } : {}),
-    ...(loose.expect?.body !== undefined
-      ? { expect: { ...loose.expect, body: substitute(loose.expect.body, bindings) } }
-      : {}),
-  } as Step;
+  // It documents `path`, `body` and `expect.body`, and `E2E-REPLY-001` puts
+  // `{{mailId}}` in `replyTo` -- a fourth. Enumerating meant that value went to
+  // the hub verbatim, which made a reply look like an ordinary send, which is
+  // pushed; the scenario then failed on the push and pointed at the hub. The
+  // list was right when it was written and the vocabulary grew past it.
+  //
+  // Substituting everything cannot fall behind the vocabulary that way, and it
+  // costs nothing: a scenario has no reason to carry a literal `{{`, and an
+  // unbound name still fails loudly wherever it appears.
+  const step = substitute(raw, bindings);
 
   switch (step.do) {
     case "provision": {
@@ -609,10 +632,46 @@ async function runStep(
         "mesh.connect",
         { identity: step.identity },
         step.expectDelivered ?? null,
+        step.hold === true,
       );
       assertRpc(step.expect, got);
       if (step.expectDelivered !== undefined && got.delivered !== step.expectDelivered) {
         fail(`expected ${step.expectDelivered} pushed message(s) after connect, got ${got.delivered}`);
+      }
+      if (got.held) {
+        held.get(step.identity)?.socket.close();
+        held.set(step.identity, got.held);
+      }
+      return;
+    }
+
+    case "disconnect": {
+      const socket = held.get(step.identity);
+      // Not tolerated as a no-op: a scenario saying "this one goes away" has
+      // nothing to say if nothing was being held, and the state it is arranging
+      // would silently be the wrong one.
+      if (!socket) fail(`${step.identity} holds no socket to disconnect`);
+      socket.socket.close();
+      held.delete(step.identity);
+      return;
+    }
+
+    case "expectPushed": {
+      const socket = held.get(step.identity);
+      if (!socket) fail(`${step.identity} holds no socket, so nothing could have been pushed to it`);
+      // Waits for the count it wants, then keeps watching for a moment. A bare
+      // poll-until-reached passes the instant the number is hit and cannot see
+      // an extra arriving right after -- and `count: 0`, which is what § 8.2a
+      // actually asserts, would otherwise pass without waiting at all.
+      const deadline = Date.now() + (step.count === 0 ? 3_000 : 15_000);
+      while (Date.now() < deadline && socket.since() < step.count) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (step.count === 0) await new Promise((resolve) => setTimeout(resolve, 1_000));
+      const seen = socket.since();
+      socket.clear();
+      if (seen !== step.count) {
+        fail(`expected ${step.count} push(es) since the last check, got ${seen}`);
       }
       return;
     }
@@ -623,6 +682,7 @@ async function runStep(
       const got = await http(from, mesh.apiHttp, "POST", "/api/v1/mailbox/out", {
         to: step.to,
         content: step.content,
+        ...(step.replyTo ? { reply_to: step.replyTo } : {}),
         ...(step.clientMessageId ? { client_message_id: step.clientMessageId } : {}),
       });
       assertRpc(step.expect, asRpcOutcome(got));
@@ -695,13 +755,14 @@ async function runScenario(
   scenario: Scenario,
 ): Promise<ScenarioResult> {
   const leases = new Map<string, string[]>();
+  const held = new Map<string, Held>();
   const steps: StepResult[] = [];
   let failed = false;
 
   for (const [index, step] of scenario.steps.entries()) {
     if (failed) break;
     try {
-      await runStep(mesh, registry, leases, bindings, step);
+      await runStep(mesh, registry, leases, bindings, held, step);
       steps.push({ step: index + 1, verb: step.do, outcome: "passed" });
     } catch (error) {
       steps.push({
@@ -711,6 +772,18 @@ async function runScenario(
         detail: error instanceof Error ? error.message : String(error),
       });
       failed = true;
+    }
+  }
+
+  // Hygiene, not an assertion: a socket left open changes presence for the
+  // next scenario, and on the shared mesh that moves every delivered/pending
+  // verdict after it. The scenario still has to say `disconnect` where the
+  // absence is part of what it claims.
+  for (const socket of held.values()) {
+    try {
+      socket.socket.close();
+    } catch {
+      // A socket the hub already closed is already in the state we want.
     }
   }
 

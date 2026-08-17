@@ -130,8 +130,8 @@ const MUTATIONS: Entry[] = [
     defect:
       "`provision` and `http` each had their own copy of the expectation check on the platform side; only one learned about `body`, so every body assertion on a provision step was green without being checked.",
     file: RUNNER,
-    find: "substitute(loose.expect.body, bindings)",
-    replace: "loose.expect.body",
+    find: "  const step = substitute(raw, bindings);",
+    replace: "  const step = raw;",
     command: scenario("E2E-KEY-003"),
     evidence: "expected key.fingerprint = \"{{fingerprint:e2e-restart}}\"",
     slow: true,
@@ -166,6 +166,16 @@ const MUTATIONS: Entry[] = [
     command: scenario("E2E-SOURCE-001"),
     evidence: "but the body has no sources.0.identity",
     slow: true,
+  },
+  {
+    defect:
+      "Substitution enumerated the three places the contract names, and the vocabulary grew a fourth: E2E-REPLY-001 puts `{{mailId}}` in `replyTo`. The literal reached the hub, a reply looked like an ordinary send, the push that produced failed the scenario, and the failure pointed at the hub.",
+    file: RUNNER,
+    find: "  const step = substitute(raw, bindings);",
+    replace: "  const step = raw;",
+    command: scenario("E2E-REPLY-001"),
+    slow: true,
+    evidence: "expected 0 push(es) since the last check, got 1",
   },
   {
     defect:
