@@ -47,6 +47,7 @@ import {
   type Scenario,
   type Step,
 } from "@agent-mesh/contracts";
+import { PROPOSED_SCENARIOS } from "./proposals";
 
 const PLATFORM =
   process.env.AGENT_MESH_E2E_PLATFORM ??
@@ -511,8 +512,18 @@ function meshEnv(scenario: Scenario): Record<string, string> {
   return env;
 }
 
-const only = process.argv[2];
-const selected = only ? E2E_SCENARIOS.filter((s) => s.id === only) : E2E_SCENARIOS;
+/**
+ * `--proposals` adds this repository's candidate scenarios to the run.
+ *
+ * Off by default and reported separately, because they are not the contract.
+ * A run that folded them into the total would report local agreement as
+ * cross-repository agreement, which is the confusion the shared list ends.
+ */
+const wantProposals = process.argv.includes("--proposals");
+const only = process.argv.slice(2).find((argument) => !argument.startsWith("--"));
+const pool = wantProposals ? [...E2E_SCENARIOS, ...PROPOSED_SCENARIOS] : E2E_SCENARIOS;
+const proposed = new Set(PROPOSED_SCENARIOS.map((scenario) => scenario.id));
+const selected = only ? pool.filter((s) => s.id === only) : pool;
 if (selected.length === 0) {
   process.stderr.write(`no scenario matches ${only}\n`);
   process.exit(2);
@@ -549,16 +560,27 @@ for (const scenario of selected.filter((s) => s.mesh)) {
 process.stdout.write("\n");
 for (const result of results) {
   const mark = result.outcome === "passed" ? "ok" : result.outcome === "failed" ? "FAIL" : "partial";
-  process.stdout.write(`${mark.padEnd(8)} ${result.id.padEnd(18)} ${result.clause}\n`);
+  const origin = proposed.has(result.id) ? "proposal" : "contract";
+  process.stdout.write(`${mark.padEnd(8)} ${origin.padEnd(9)} ${result.id.padEnd(18)} ${result.clause}\n`);
   for (const step of result.steps) {
     if (step.outcome === "passed") continue;
-    process.stdout.write(`         step ${step.step} ${step.verb}: ${step.outcome} — ${step.detail}\n`);
+    process.stdout.write(`                  step ${step.step} ${step.verb}: ${step.outcome} — ${step.detail}\n`);
   }
 }
 
-const failedCount = results.filter((r) => r.outcome === "failed").length;
-const skippedSteps = results.flatMap((r) => r.steps).filter((s) => s.outcome === "skipped").length;
+const shared_ = results.filter((r) => !proposed.has(r.id));
+const failedCount = shared_.filter((r) => r.outcome === "failed").length;
+const skippedSteps = shared_.flatMap((r) => r.steps).filter((s) => s.outcome === "skipped").length;
 process.stdout.write(
-  `\n${results.length - failedCount}/${results.length} scenarios, ${skippedSteps} step(s) skipped\n`,
+  `\n${shared_.length - failedCount}/${shared_.length} contract scenarios, ${skippedSteps} step(s) skipped\n`,
 );
+const proposals = results.filter((r) => proposed.has(r.id));
+if (proposals.length > 0) {
+  const proposalsPassed = proposals.filter((r) => r.outcome !== "failed").length;
+  process.stdout.write(
+    `${proposalsPassed}/${proposals.length} proposed scenarios (not the contract; see e2e/proposals.ts)\n`,
+  );
+}
+// Only the contract decides the exit status. A proposal that fails is this
+// side discovering its proposal is wrong, not the mesh being broken.
 process.exit(failedCount === 0 ? 0 : 1);
