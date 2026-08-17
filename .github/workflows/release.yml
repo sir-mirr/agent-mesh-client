@@ -57,15 +57,12 @@ jobs:
       # binary reports whatever the manifest happened to say -- v0.1.1 shipped
       # one answering `0.1.0-dev.0`, a version matching no tag anyone could
       # have installed.
-      - run: |
-          version="${GITHUB_REF_NAME#v}"
-          bun --eval '
-            const path = "package.json";
-            const manifest = await Bun.file(path).json();
-            manifest.version = process.argv[1];
-            await Bun.write(path, JSON.stringify(manifest, null, 2) + "\n");
-          ' "$version"
-          test "$(bun --eval 'console.log((await Bun.file("package.json").json()).version)')" = "$version"
+      #
+      # The logic is in `scripts/set-version.ts` rather than inline here, so
+      # `bun test` executes it on every push. Inline, the only way to run it was
+      # to cut a tag: the fix for v0.1.1 sat written and asserted and unexecuted,
+      # and the next tag would have been its first run.
+      - run: bun run scripts/set-version.ts
       - run: bun build --compile --target=${{ matrix.target }} ./src/cli.ts --outfile=agent-mesh
       # What the artifact answers, checked on the artifact rather than assumed
       # from the input. Only where the runner can execute what it just built.

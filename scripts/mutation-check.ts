@@ -101,6 +101,24 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The tag-to-version step accepted any ref. A branch or a manual dispatch would be written into the manifest verbatim, producing a binary that answers `main`.",
+    file: "scripts/set-version.ts",
+    find: "/^v(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)$/",
+    replace: "/^v?(.*)$/",
+    command: ["bun", "test", "test/release-version.test.ts"],
+    evidence: "release version injection > and anything that is not a tag is refused",
+  },
+  {
+    defect:
+      "The injection is only reached because the workflow calls it. A workflow that stopped calling it would leave every test about the injection passing while releases went back to shipping whatever the manifest said — which is exactly how v0.1.1 shipped.",
+    file: ".github/workflows/release.yml",
+    find: "- run: bun run scripts/set-version.ts",
+    replace: "- run: echo no version injection",
+    command: ["bun", "test", "test/release-version.test.ts"],
+    evidence: "release version injection > the release workflow calls this and holds no version logic of its own",
+  },
+  {
+    defect:
       "`tsconfig.json` covered src and test only, so `bun run check` never opened e2e, scripts or .claude/hooks while reporting zero errors for changes made in them.",
     file: "tsconfig.json",
     find: ', "e2e/**/*.ts"',
@@ -374,9 +392,11 @@ if (fast) {
 }
 
 let missed = 0;
+const tally = new Map<Outcome, number>();
 for (const [index, entry] of selected.entries()) {
   const label = `${index + 1}/${selected.length} ${entry.file} ${entry.command.slice(1).join(" ")}`;
   const { outcome, detail } = await evaluate(entry);
+  tally.set(outcome, (tally.get(outcome) ?? 0) + 1);
   if (outcome !== "caught") missed += 1;
   process.stdout.write(
     outcome === "caught" ? `caught      ${label}\n` : `${outcome.padEnd(11)} ${label}\n            ${detail}\n`,
@@ -388,9 +408,19 @@ for (const [index, entry] of selected.entries()) {
 // to the last line sees a complete pass. The platform side had the same shape in
 // theirs, found by asking their tool this repository's question rather than by
 // being told the answer.
+//
+// And the remainder is broken out by kind, because `0/9 caught` reads as nine
+// checkers that failed to notice when the truth was nine that never ran — a
+// refusal on a dirty tree prints exactly that. A count of what did not happen
+// is not a count of what went wrong.
+const remainder = [...tally]
+  .filter(([outcome]) => outcome !== "caught")
+  .map(([outcome, count]) => `${count} ${outcome}`)
+  .join(", ");
 process.stdout.write(
   `\n${selected.length - missed}/${selected.length} caught` +
     (fast ? ` — fast subset, of ${MUTATIONS.length} in the set` : "") +
+    (remainder ? ` (${remainder})` : "") +
     "\n",
 );
 process.exit(missed === 0 ? 0 : 1);
