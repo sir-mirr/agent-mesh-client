@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ERROR_CLASS, ERROR_DATA_CODE, MESH_ERROR, errorClass } from "@agent-mesh/contracts";
-import { auditErrorCode } from "../src/hub/audit-worker";
+import { auditErrorCode, requestedDelay } from "../src/hub/audit-worker";
 import { HubRpcError } from "../src/hub/mesh-client";
 
 describe("audit retry classification", () => {
@@ -80,5 +80,24 @@ describe("audit error code recording", () => {
       code: "toString",
     });
     expect(auditErrorCode(error)).toBe("-32000");
+  });
+});
+
+describe("server-requested retry delays", () => {
+  // The Hub knows when it will be ready and this client does not. Ignoring the
+  // number it sends means retrying early against a Hub that is shedding load,
+  // which is the behaviour the limit exists to stop.
+  test("prefers the Hub's delay over the local backoff", () => {
+    expect(requestedDelay({ retry_after_ms: 4_500 })).toBe(4_500);
+    expect(requestedDelay({ retry_after: 3 })).toBe(3_000);
+  });
+
+  // Zero would mean "immediately", which is the loop being rate-limited. Read
+  // as absent so the local backoff decides instead.
+  test("ignores a zero or missing delay rather than retrying at once", () => {
+    expect(requestedDelay({ retry_after_ms: 0 })).toBeNull();
+    expect(requestedDelay({ retry_after: 0 })).toBeNull();
+    expect(requestedDelay({})).toBeNull();
+    expect(requestedDelay(null)).toBeNull();
   });
 });

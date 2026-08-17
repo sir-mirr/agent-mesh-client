@@ -36,10 +36,29 @@ class AuditHttpError extends Error {
   constructor(
     readonly status: number,
     readonly permanent: boolean,
+    /** What the Hub asked us to wait, when it said. */
+    readonly retryAfterMs: number | null = null,
   ) {
     super(`Blob upload failed with HTTP ${status}`);
     this.name = "AuditHttpError";
   }
+}
+
+/**
+ * How long the Hub asked us to wait, in milliseconds, or null.
+ *
+ * A Hub shedding load knows when it will be ready and we do not; guessing
+ * with our own backoff either hammers it early or idles longer than it asked.
+ * Never zero -- a Hub that means "immediately" would be asking for the loop it
+ * is trying to stop -- so a zero is read as absent.
+ */
+export function requestedDelay(source: { retry_after_ms?: unknown; retry_after?: unknown } | null): number | null {
+  if (!source) return null;
+  const milliseconds = source.retry_after_ms;
+  if (typeof milliseconds === "number" && milliseconds > 0) return milliseconds;
+  const seconds = source.retry_after;
+  if (typeof seconds === "number" && seconds > 0) return Math.ceil(seconds * 1_000);
+  return null;
 }
 
 function eventAttachments(event: StoredAuditEvent): RawAttachment[] {
@@ -173,9 +192,16 @@ export class AuditWorker {
       }
       const operatorRequired = classification === "transient-operator";
       const waitApproval = classification === "wait-approval";
-      const delay = waitApproval
-        ? 30_000
-        : retryDelay(event.attemptCount, operatorRequired);
+      // The Hub's own number wins where it gave one -- AUDIT_BUSY and
+      // RATE_LIMITED both carry it. Our backoff is a guess about a server we
+      // cannot see; theirs is not a guess.
+      const asked =
+        requestedDelay((rpcError?.data ?? null) as { retry_after_ms?: unknown } | null) ??
+        httpError?.retryAfterMs ??
+        null;
+      const delay =
+        asked ??
+        (waitApproval ? 30_000 : retryDelay(event.attemptCount, operatorRequired));
       this.outbox.markRetry(
         event.eventId,
         rpcError?.code === MESH_ERROR.AUDIT_MISSING_BLOBS
@@ -246,9 +272,12 @@ export class AuditWorker {
           signal: AbortSignal.timeout(capability.upload_timeout_seconds * 1_000),
         });
         if (response.status !== 200 && response.status !== 201) {
+          const header = response.headers.get("retry-after");
+          const seconds = header === null ? Number.NaN : Number(header);
           throw new AuditHttpError(
             response.status,
             response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429,
+            Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds * 1_000) : null,
           );
         }
       }
