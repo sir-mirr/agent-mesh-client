@@ -39,3 +39,18 @@ jobs:
       # something was not.
       - run: bun run mutation-check -- --self-check
       - run: bun run build
+      # The artifact users install, actually run. `bun test` and the scenario
+      # runner exercise `src/` -- the standalone binary is a different build,
+      # and until this step it was executed by nothing: CI never compiled it,
+      # and the live-acceptance script imports the source rather than running
+      # it. A green run said nothing about the thing on the releases page.
+      #
+      # A short runtime directory on purpose: a unix socket path has about a
+      # hundred characters to work with, and the default runner temp path is
+      # long enough to spend them.
+      - run: bun run compile
+      - run: |
+          mkdir -p /tmp/amci
+          test "$(./dist/agent-mesh --version)" = "$(bun --eval 'console.log((await Bun.file("package.json").json()).version)')"
+          ./dist/agent-mesh doctor --config /tmp/amci/c.yaml --state-dir /tmp/amci/s --runtime-dir /tmp/amci
+          test "$(./dist/agent-mesh lane list --config /tmp/amci/c.yaml --state-dir /tmp/amci/s --runtime-dir /tmp/amci)" = "[]"
