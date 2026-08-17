@@ -54,7 +54,13 @@ export class MutationRefused extends Error {}
 /** Applies one mutation, runs the command, restores, and reports the exit code. */
 const NESTING = "AGENT_MESH_MUTATION_ACTIVE";
 
-export async function runMutation(mutation: Mutation): Promise<number> {
+export interface MutationRun {
+  exitCode: number;
+  /** stdout and stderr together: the caller decides what counts as a verdict. */
+  output: string;
+}
+
+export async function runMutation(mutation: Mutation): Promise<MutationRun> {
   if (process.env[NESTING]) {
     throw new MutationRefused(
       "already inside a mutation; a nested run sees the outer edit as a dirty tree and refuses everything",
@@ -77,7 +83,10 @@ export async function runMutation(mutation: Mutation): Promise<number> {
       stderr: "pipe",
       env: { ...process.env, [NESTING]: "1" },
     });
-    return run.exitCode ?? 1;
+    return {
+      exitCode: run.exitCode ?? 1,
+      output: `${run.stdout.toString()}${run.stderr.toString()}`,
+    };
   } finally {
     await $`git checkout -- ${mutation.file}`.quiet();
     const after = await dirty();
@@ -97,7 +106,8 @@ const command = separator === -1 ? [] : process.argv.slice(separator + 1);
     process.exit(2);
   }
   try {
-    const exitCode = await runMutation({ file, find, replace, command });
+    const { exitCode, output } = await runMutation({ file, find, replace, command });
+    process.stdout.write(output);
     process.stdout.write(`mutated ${file}: command exited ${exitCode}\n`);
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

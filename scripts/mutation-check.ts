@@ -38,6 +38,8 @@ interface Entry extends Mutation {
   defect: string;
   /** Minutes, roughly: does this stand up a mesh? */
   slow?: boolean;
+  /** Overrides the marker derived from the command. Only the self-check needs it. */
+  evidence?: string;
 }
 
 const RUNNER = "e2e/scenario-runner.ts";
@@ -46,7 +48,28 @@ const scenario = (id: string) => ["bun", RUNNER, id];
 const scopeTest = ["bun", "test", SCOPE];
 const typecheck = ["bun", "run", "check"];
 
-type Outcome = "caught" | "NOT CAUGHT" | "REFUSED";
+type Outcome = "caught" | "NOT CAUGHT" | "REFUSED" | "INCONCLUSIVE";
+
+/**
+ * What the mutated run must print for its exit code to mean anything.
+ *
+ * `caught` was a non-zero exit alone. A child that dies before it reports --
+ * a crash, an OOM, a harness that never bound its port -- also exits non-zero,
+ * and was recorded as the guard doing its job. That is a wrong finding about a
+ * guard rather than a true one about a run, which is the distinction this whole
+ * file exists to hold; the mesh-backed entries make it likely rather than
+ * theoretical, since starting a real hub is a thing that can simply fail.
+ *
+ * Derived from the command instead of restated per entry, and unknown commands
+ * throw rather than defaulting: a marker chosen by fallback would match
+ * whatever, which is the same silence in a new place.
+ */
+function evidenceOf(command: string[]): string {
+  if (command[1] === RUNNER) return "contract scenarios";
+  if (command[1] === "test") return "Ran ";
+  if (command[1] === "run" && command[2] === "check") return "error TS";
+  throw new Error(`no evidence marker known for: ${command.join(" ")}`);
+}
 
 /**
  * The contract pin, read rather than written down here.
@@ -157,6 +180,13 @@ const MUTATIONS: Entry[] = [
     replace: "String(3)]",
     command: scenario("E2E-CAP-001"),
     slow: true,
+    // Names the guard rather than the run. This one is caught before a
+    // scenario executes -- the mesh refuses to start with a lease the scenario
+    // did not ask for -- so there is no summary line, and the first full run
+    // under the inconclusive rule correctly said so. The marker being the
+    // refusal itself is stronger than a summary anyway: it says *which* check
+    // fired, not merely that something did.
+    evidence: "harness applied receive_lease_seconds=3, scenario requires 2",
   },
 ];
 
@@ -204,14 +234,34 @@ const SELF_CHECK: (Entry & { mustFailAs: Outcome })[] = [
     replace: "irrelevant",
     command: scopeTest,
   },
+  {
+    // The third way a run says nothing: it exits non-zero having never reached
+    // a verdict. A crashed child, a harness that never bound its port. Forced
+    // here by asking for a marker the run cannot print, so the branch that
+    // separates "the guard caught it" from "we never found out" is exercised
+    // by a command rather than by hand.
+    defect: "TEMPORARY: a run that fails without ever reporting.",
+    mustFailAs: "INCONCLUSIVE",
+    file: SCOPE,
+    find: "expect(outside).toEqual([]);",
+    replace: 'expect(outside).toEqual(["forced"]);',
+    command: scopeTest,
+    evidence: "a-marker-no-run-prints",
+  },
 ];
 
 async function evaluate(entry: Entry): Promise<{ outcome: Outcome; detail: string }> {
   try {
-    const exitCode = await runMutation(entry);
-    return exitCode === 0
-      ? { outcome: "NOT CAUGHT", detail: entry.defect }
-      : { outcome: "caught", detail: "" };
+    const { exitCode, output } = await runMutation(entry);
+    if (exitCode === 0) return { outcome: "NOT CAUGHT", detail: entry.defect };
+    const evidence = entry.evidence ?? evidenceOf(entry.command);
+    if (!output.includes(evidence)) {
+      return {
+        outcome: "INCONCLUSIVE",
+        detail: `exited ${exitCode} without reporting (no "${evidence}"): ${output.trim().split("\n").pop() ?? ""}`,
+      };
+    }
+    return { outcome: "caught", detail: "" };
   } catch (error) {
     // A refusal is not a result. Counting it as caught would let a mutation
     // that stopped matching -- a rename, a rewrite -- report success forever.
