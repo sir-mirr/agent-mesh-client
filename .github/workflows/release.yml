@@ -16,7 +16,22 @@ jobs:
           - runner: macos-14
             target: bun-darwin-arm64
             asset: darwin-arm64
-          - runner: macos-13
+          # Cross-compiled from Apple Silicon rather than built on an Intel
+          # runner. `macos-13` never started: v0.1.0 held it queued for 53
+          # minutes while the other three targets finished in 15-19 seconds,
+          # so the runner is not available to this project at all.
+          #
+          # `bun build --compile --target=` handles the cross-compile — checked
+          # locally before this was written, producing a 66 MB
+          # `Mach-O 64-bit executable x86_64`.
+          #
+          # **Not verified on Intel hardware.** It was executed here only
+          # through Rosetta, which proves the artifact is well-formed and the
+          # bundle intact, and proves nothing about a real Intel Mac. Rosetta
+          # also does not expose AVX, so the binary warns about it there; that
+          # warning is about this host, not about the machines this asset is
+          # for.
+          - runner: macos-14
             target: bun-darwin-x64
             asset: darwin-x64
           - runner: ubuntu-latest
