@@ -342,8 +342,6 @@ if (process.argv.includes("--collect")) {
 const fast = process.argv.includes("--fast");
 const selected = fast ? MUTATIONS.filter((entry) => !entry.slow) : MUTATIONS;
 if (fast) {
-  // Said out loud. A partial run reported as a full one is the same shape as
-  // everything else in this file.
   process.stdout.write(`skipping ${MUTATIONS.length - selected.length} mesh-backed mutation(s)\n\n`);
 }
 
@@ -357,5 +355,14 @@ for (const [index, entry] of selected.entries()) {
   );
 }
 
-process.stdout.write(`\n${selected.length - missed}/${selected.length} caught\n`);
+// The context goes on the total line, not only in a header. `5/5 caught` is
+// character-for-character what a clean full run prints, and a reader who scrolls
+// to the last line sees a complete pass. The platform side had the same shape in
+// theirs, found by asking their tool this repository's question rather than by
+// being told the answer.
+process.stdout.write(
+  `\n${selected.length - missed}/${selected.length} caught` +
+    (fast ? ` — fast subset, of ${MUTATIONS.length} in the set` : "") +
+    "\n",
+);
 process.exit(missed === 0 ? 0 : 1);
