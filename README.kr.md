@@ -42,12 +42,21 @@ Channel 왕복은 Hub를 우회하므로 Hub 장애가 로컬 응답을 막지 �
 
 ### 설치
 
+**아직 릴리스가 없습니다.** 소스에서 빌드하십시오. 이 경로에만 Bun이 필요합니다.
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/install.sh | sh
-agent-mesh
+git clone https://github.com/sir-mirr/agent-mesh-client && cd agent-mesh-client
+bun install --frozen-lockfile && bun run compile
+./dist/agent-mesh
 ```
 
-installer는 release archive를 `SHA256SUMS`로 검증한 뒤 `~/.local/bin/agent-mesh`에 설치하고 launchd 또는 systemd 사용자 서비스를 등록합니다. `AGENT_MESH_INSTALL_SERVICE=0`이면 서비스 등록을 건너뜁니다. Bun·Node.js·npm은 필요 없습니다.
+태그 릴리스가 나오면 installer가 대신하고 Bun은 필요 없어집니다 — 플랫폼에 맞는 standalone 바이너리를 받아 `SHA256SUMS`로 검증한 뒤 `~/.local/bin/agent-mesh`에 설치하고 launchd 또는 systemd 사용자 서비스를 등록합니다(`AGENT_MESH_INSTALL_SERVICE=0`이면 서비스 등록을 건너뜁니다):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/install.sh | sh
+```
+
+실행 전에 [releases](https://github.com/sir-mirr/agent-mesh-client/releases)를 확인하십시오. 릴리스가 나오기 전까지 저 명령은 404이고, 이 문단은 그동안 아니라고 말하고 있었습니다.
 
 ### 설치해야 하는 것
 

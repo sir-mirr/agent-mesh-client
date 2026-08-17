@@ -42,12 +42,21 @@ Each lane holds its conversation open from start and continues the previous one 
 
 ### Install
 
+**No release has been published yet**, so build from source. This needs Bun; nothing else does.
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/install.sh | sh
-agent-mesh
+git clone https://github.com/sir-mirr/agent-mesh-client && cd agent-mesh-client
+bun install --frozen-lockfile && bun run compile
+./dist/agent-mesh
 ```
 
-The installer verifies the release archive against `SHA256SUMS`, installs to `~/.local/bin/agent-mesh`, and registers a launchd or systemd user service. `AGENT_MESH_INSTALL_SERVICE=0` skips the service. No Bun, Node or npm required.
+Once a tagged release exists, the installer takes over and Bun stops being needed — it fetches the standalone binary for your platform, verifies it against `SHA256SUMS`, installs to `~/.local/bin/agent-mesh`, and registers a launchd or systemd user service (`AGENT_MESH_INSTALL_SERVICE=0` skips that):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/install.sh | sh
+```
+
+Check [releases](https://github.com/sir-mirr/agent-mesh-client/releases) before running it. Until one is published that command resolves to a 404, and this section said otherwise for as long as it existed.
 
 ### What you need installed
 
