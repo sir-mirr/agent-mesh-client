@@ -23,6 +23,16 @@
 
 import { MutationRefused, runMutation, type Mutation } from "./mutate";
 
+// Fatal here rather than per entry. Inside another mutation every entry refuses
+// for a reason that has nothing to do with the guard it names, and a refusal
+// counts as a failure -- so a self-check that never ran would report that every
+// entry behaved correctly. Refusing to start is the only answer that is not a
+// wrong one.
+if (process.env.AGENT_MESH_MUTATION_ACTIVE) {
+  process.stderr.write("cannot run inside another mutation: nothing here would be measuring itself\n");
+  process.exit(2);
+}
+
 interface Entry extends Mutation {
   /** What broke, in the past tense, because it happened. */
   defect: string;
@@ -98,7 +108,8 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
-      "Three clauses were asserted only through a status code once `expectStored` was removed; without the query string the operator routes answer with whatever row is first.",
+      "Three clauses were asserted only through a status code once `expectStored` was removed; without the query string the operator routes answer with whatever row is first. " +
+      "That first row is wrong today because the shared mesh carries other scenarios' traffic — a situation, not a design. If E2E-SOURCE-001 ever takes a `mesh` requirement of its own it gets an empty mesh, its own row becomes the first one, and this entry goes quietly meaningless.",
     file: RUNNER,
     find: "`${base}${path}`",
     replace: '`${base}${path.split("?")[0]}`',
@@ -116,6 +127,80 @@ const MUTATIONS: Entry[] = [
   },
 ];
 
+/**
+ * Two mutations that must **not** be caught, for `--self-check`.
+ *
+ * The failure branch of this file had never executed. A set of nine that all
+ * pass never prints `NOT CAUGHT`, so the code saying a guard is missing was
+ * itself a check nobody had seen work -- this file appearing inside the tool
+ * written to find it.
+ *
+ * It was first confirmed by hand, which is the objection that put the set in
+ * the repository in the first place: a proof living only in a transcript
+ * outlives what it describes. So it is a command.
+ *
+ * One entry for each way a mutation stops being evidence. The second is the
+ * more dangerous: a rename leaves the pattern unmatched, the command runs
+ * against untouched source and passes, and that reads as the guard failing to
+ * catch a real defect — a wrong finding rather than a missing one.
+ */
+const SELF_CHECK: Entry[] = [
+  {
+    defect: "TEMPORARY: an edit inside a comment, which no guard could object to.",
+    file: SCOPE,
+    find: "Every TypeScript file in this repository is inside the checked scope.",
+    replace: "Every TypeScript file in this repository is within the checked scope.",
+    command: scopeTest,
+  },
+  {
+    defect: "TEMPORARY: a pattern that is no longer present, as a rename would leave it.",
+    file: SCOPE,
+    find: "a-string-this-file-does-not-contain",
+    replace: "irrelevant",
+    command: scopeTest,
+  },
+];
+
+type Outcome = "caught" | "NOT CAUGHT" | "REFUSED";
+
+async function evaluate(entry: Entry): Promise<{ outcome: Outcome; detail: string }> {
+  try {
+    const exitCode = await runMutation(entry);
+    return exitCode === 0
+      ? { outcome: "NOT CAUGHT", detail: entry.defect }
+      : { outcome: "caught", detail: "" };
+  } catch (error) {
+    // A refusal is not a result. Counting it as caught would let a mutation
+    // that stopped matching -- a rename, a rewrite -- report success forever.
+    return {
+      outcome: "REFUSED",
+      detail: error instanceof MutationRefused ? error.message : String(error),
+    };
+  }
+}
+
+if (process.argv.includes("--self-check")) {
+  let wrong = 0;
+  for (const entry of SELF_CHECK) {
+    const { outcome, detail } = await evaluate(entry);
+    if (outcome === "caught") {
+      wrong += 1;
+      process.stdout.write(`reported as caught, but nothing should have caught it: ${entry.defect}\n`);
+    } else {
+      process.stdout.write(`${outcome.padEnd(11)} ${detail.split("\n")[0]}\n`);
+    }
+  }
+  process.stdout.write(
+    wrong === 0
+      ? `\nself-check: ${SELF_CHECK.length}/${SELF_CHECK.length} correctly reported as failures\n`
+      : `\nself-check FAILED: ${wrong} reported as caught — the failure branch is not working\n`,
+  );
+  // One layer, and then a stop. A self-check of the self-check has no end, and
+  // the place to stop was chosen by going one layer further and watching it
+  // bite rather than by deciding where it felt like enough.
+  process.exit(wrong === 0 ? 0 : 1);
+}
+
 const fast = process.argv.includes("--fast");
 const selected = fast ? MUTATIONS.filter((entry) => !entry.slow) : MUTATIONS;
 if (fast) {
@@ -127,22 +212,11 @@ if (fast) {
 let missed = 0;
 for (const [index, entry] of selected.entries()) {
   const label = `${index + 1}/${selected.length} ${entry.file} ${entry.command.slice(1).join(" ")}`;
-  try {
-    const exitCode = await runMutation(entry);
-    if (exitCode === 0) {
-      missed += 1;
-      process.stdout.write(`NOT CAUGHT  ${label}\n            ${entry.defect}\n`);
-    } else {
-      process.stdout.write(`caught      ${label}\n`);
-    }
-  } catch (error) {
-    // A refusal is not a result. Counting it as caught would let a mutation
-    // that stopped matching -- a rename, a rewrite -- report success forever.
-    missed += 1;
-    process.stdout.write(
-      `REFUSED     ${label}\n            ${error instanceof MutationRefused ? error.message : String(error)}\n`,
-    );
-  }
+  const { outcome, detail } = await evaluate(entry);
+  if (outcome !== "caught") missed += 1;
+  process.stdout.write(
+    outcome === "caught" ? `caught      ${label}\n` : `${outcome.padEnd(11)} ${label}\n            ${detail}\n`,
+  );
 }
 
 process.stdout.write(`\n${selected.length - missed}/${selected.length} caught\n`);
