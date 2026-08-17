@@ -71,6 +71,23 @@ jobs:
       - run: cd dist && sha256sum *.tar.gz > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
+          # Next to the assets, not only in the workflow that built them. A
+          # reader of this file is a maintainer; a reader of the release page
+          # is the person about to run the binary, and the limitation is theirs
+          # to know.
+          body: |
+            Standalone binaries. No Bun, Node or npm needed to run them.
+
+            Verify against `SHA256SUMS`, or use the installer:
+
+            ```sh
+            curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/install.sh | sh
+            ```
+
+            **`darwin-x64` is cross-compiled on Apple Silicon and has not been
+            verified on a real Intel Mac.** The other three targets are built
+            on their own architecture. If it fails for you, that is the first
+            measurement anyone has of it — please report what you see.
           files: |
             dist/*.tar.gz
             dist/SHA256SUMS

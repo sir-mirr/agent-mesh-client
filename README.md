@@ -42,21 +42,21 @@ Each lane holds its conversation open from start and continues the previous one 
 
 ### Install
 
-**No release has been published yet**, so build from source. This needs Bun; nothing else does.
+The installer fetches the standalone binary for your platform, verifies it against `SHA256SUMS`, installs to `~/.local/bin/agent-mesh`, and registers a launchd or systemd user service (`AGENT_MESH_INSTALL_SERVICE=0` skips that). Nothing else is needed to run it — no Bun, Node or npm.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/install.sh | sh
+```
+
+It reads whatever is on the [releases](https://github.com/sir-mirr/agent-mesh-client/releases) page, so that page is the authority on what exists; the command answers 404 when nothing has been published. `darwin-x64` there is cross-compiled on Apple Silicon and has **not** been verified on a real Intel Mac. The other three targets are built on their own architecture.
+
+Building from source works at any commit and is the only path that needs Bun:
 
 ```sh
 git clone https://github.com/sir-mirr/agent-mesh-client && cd agent-mesh-client
 bun install --frozen-lockfile && bun run compile
 ./dist/agent-mesh
 ```
-
-Once a tagged release exists, the installer takes over and Bun stops being needed — it fetches the standalone binary for your platform, verifies it against `SHA256SUMS`, installs to `~/.local/bin/agent-mesh`, and registers a launchd or systemd user service (`AGENT_MESH_INSTALL_SERVICE=0` skips that):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/sir-mirr/agent-mesh-client/main/install.sh | sh
-```
-
-Check [releases](https://github.com/sir-mirr/agent-mesh-client/releases) before running it. Until one is published that command resolves to a 404, and this section said otherwise for as long as it existed.
 
 ### What you need installed
 
