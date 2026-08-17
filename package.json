@@ -45,7 +45,7 @@
     "mutation-check": "bun run ./scripts/mutation-check.ts"
   },
   "dependencies": {
-    "@agent-mesh/contracts": "github:sir-mirr/agent-mesh-contracts#v0.24.0"
+    "@agent-mesh/contracts": "github:sir-mirr/agent-mesh-contracts#v0.24.1"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",
