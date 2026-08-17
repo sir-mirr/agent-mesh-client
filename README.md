@@ -33,7 +33,7 @@ Each lane holds its conversation open from start and continues the previous one 
 | | |
 |---|---|
 | Hub and normative `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
-| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), pinned at `v0.14.1` |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), pinned at `v0.17.0` |
 | This client | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---
@@ -194,8 +194,11 @@ An unassigned code is answered by `errorClassOf(code)`, which splits by band: in
 ```sh
 bun install --frozen-lockfile
 bun run check && bun test
+bun run mutation-check   # breaks each guard and checks something fails
 bun run compile          # standalone binary
 ```
+
+`mutation-check` is the evidence for the checkers. Each entry names a defect that actually reached this repository and the check now standing between it and a release; a guard nobody can break is a guard nobody has evidence for. `--fast` skips the entries that stand up a mesh, and says how many it skipped.
 
 Live acceptance against a real Hub:
 

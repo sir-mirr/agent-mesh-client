@@ -33,7 +33,7 @@ Channel 왕복은 Hub를 우회하므로 Hub 장애가 로컬 응답을 막지 �
 | | |
 |---|---|
 | Hub와 규범 `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
-| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), `v0.14.1` 고정 |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), `v0.17.0` 고정 |
 | 이 클라이언트 | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---
@@ -194,6 +194,7 @@ if (errorDataCode(err) === ERROR_DATA_CODE.AUDIT_APPEND_FAILED) ... // 뭐가 �
 ```sh
 bun install --frozen-lockfile
 bun run check && bun test
+bun run mutation-check   # 가드를 하나씩 깨뜨려 무언가 실패하는지 확인
 bun run compile          # standalone 바이너리
 ```
 

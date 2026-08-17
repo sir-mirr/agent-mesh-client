@@ -17,6 +17,9 @@
  *
  *   bun scripts/mutate.ts <file> <find> <replace> -- <command...>
  *
+ * `runMutation` is the same thing as a function, so `mutation-check.ts` runs
+ * the committed set through this exact code rather than a second copy of it.
+ *
  * Three refusals, each for a way this reports the wrong answer rather than no
  * answer:
  *
@@ -30,42 +33,58 @@
 
 import { $ } from "bun";
 
-const separator = process.argv.indexOf("--");
-const [file, find, replace] = process.argv.slice(2, separator === -1 ? undefined : separator);
-const command = separator === -1 ? [] : process.argv.slice(separator + 1);
-
-if (!file || find === undefined || replace === undefined || command.length === 0) {
-  process.stderr.write("usage: bun scripts/mutate.ts <file> <find> <replace> -- <command...>\n");
-  process.exit(2);
+export interface Mutation {
+  file: string;
+  find: string;
+  replace: string;
+  command: string[];
 }
 
 async function dirty(): Promise<string> {
   return (await $`git status --porcelain`.text()).trim();
 }
 
-const before = await dirty();
-if (before) {
-  process.stderr.write(`refusing to mutate a dirty tree; commit or stash first:\n${before}\n`);
-  process.exit(2);
+export class MutationRefused extends Error {}
+
+/** Applies one mutation, runs the command, restores, and reports the exit code. */
+export async function runMutation(mutation: Mutation): Promise<number> {
+  const before = await dirty();
+  if (before) {
+    throw new MutationRefused(`refusing to mutate a dirty tree; commit or stash first:\n${before}`);
+  }
+
+  const original = await Bun.file(mutation.file).text();
+  if (!original.includes(mutation.find)) {
+    throw new MutationRefused(`no match for the mutation in ${mutation.file}; nothing was changed`);
+  }
+  await Bun.write(mutation.file, original.replaceAll(mutation.find, mutation.replace));
+
+  try {
+    const run = Bun.spawnSync(mutation.command, { stdout: "pipe", stderr: "pipe" });
+    return run.exitCode ?? 1;
+  } finally {
+    await $`git checkout -- ${mutation.file}`.quiet();
+    const after = await dirty();
+    if (after) {
+      throw new MutationRefused(`the tree is still dirty after restoring ${mutation.file}:\n${after}`);
+    }
+  }
 }
 
-const original = await Bun.file(file).text();
-if (!original.includes(find)) {
-  process.stderr.write(`no match for the mutation in ${file}; nothing was changed\n`);
-  process.exit(2);
+if (import.meta.main) {
+  const separator = process.argv.indexOf("--");
+const [file, find, replace] = process.argv.slice(2, separator === -1 ? undefined : separator);
+const command = separator === -1 ? [] : process.argv.slice(separator + 1);
+
+  if (!file || find === undefined || replace === undefined || command.length === 0) {
+    process.stderr.write("usage: bun scripts/mutate.ts <file> <find> <replace> -- <command...>\n");
+    process.exit(2);
+  }
+  try {
+    const exitCode = await runMutation({ file, find, replace, command });
+    process.stdout.write(`mutated ${file}: command exited ${exitCode}\n`);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(2);
+  }
 }
-await Bun.write(file, original.replaceAll(find, replace));
-
-const run = Bun.spawnSync(command, { stdout: "inherit", stderr: "inherit" });
-await $`git checkout -- ${file}`.quiet();
-
-const after = await dirty();
-if (after) {
-  process.stderr.write(`the tree is still dirty after restoring ${file}:\n${after}\n`);
-  process.exit(2);
-}
-
-// The mutated run *should* fail. Reported rather than translated: what counts
-// as caught is the reader's call, and a tool that decided it would be another
-// checker nobody checks.
-process.stdout.write(`\nmutated ${file}: command exited ${run.exitCode}\n`);

@@ -41,7 +41,8 @@
     "test:e2e:live": "bun run ./scripts/e2e-live.ts",
     "test:e2e:scenarios": "bun run ./e2e/scenario-runner.ts",
     "test:watch": "bun test --watch",
-    "prepack": "bun run check && bun test && bun run build"
+    "prepack": "bun run check && bun test && bun run build",
+    "mutation-check": "bun run ./scripts/mutation-check.ts"
   },
   "dependencies": {
     "@agent-mesh/contracts": "github:sir-mirr/agent-mesh-contracts#v0.17.0"
