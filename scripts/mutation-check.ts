@@ -92,6 +92,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The CLI held its own copy of the version. package.json said the same string and the git tag said a third, so the v0.1.1 release shipped a binary reporting `0.1.0-dev.0` — a version matching no tag anyone could install, with nothing comparing the two.",
+    file: "src/cli.ts",
+    find: "const VERSION = packageManifest.version;",
+    replace: 'const VERSION = "0.1.0-dev.0";',
+    command: ["bun", "test", "test/version-source.test.ts"],
+    evidence: "reported version > the CLI reads it rather than repeating it",
+  },
+  {
+    defect:
       "`tsconfig.json` covered src and test only, so `bun run check` never opened e2e, scripts or .claude/hooks while reporting zero errors for changes made in them.",
     file: "tsconfig.json",
     find: ', "e2e/**/*.ts"',

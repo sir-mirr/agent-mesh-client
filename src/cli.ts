@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import packageManifest from "../package.json";
 import { basename, resolve } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { defaultLocations } from "./config/locations";
@@ -33,7 +34,13 @@ import {
   userServiceStatus,
 } from "./service/user-service";
 
-const VERSION = "0.1.0-dev.0";
+// Read, not repeated. This was a literal here and the same string in
+// package.json, with the git tag as a third copy -- and the v0.1.1 release
+// shipped a binary whose `--version` answered `0.1.0-dev.0`, matching no tag
+// anybody could have installed. The release build writes the tag into
+// package.json before compiling, so a released artifact reports the tag it
+// was cut from and a source build reports the manifest it was built from.
+const VERSION = packageManifest.version;
 
 const HELP = `agent-mesh ${VERSION}
 

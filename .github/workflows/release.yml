@@ -53,7 +53,24 @@ jobs:
       # an ordinary push is the one build where that matters most.
       - run: bun run mutation-check -- --fast
       - run: bun run mutation-check -- --self-check
+      # The tag is the authority for a released artifact. Without this the
+      # binary reports whatever the manifest happened to say -- v0.1.1 shipped
+      # one answering `0.1.0-dev.0`, a version matching no tag anyone could
+      # have installed.
+      - run: |
+          version="${GITHUB_REF_NAME#v}"
+          bun --eval '
+            const path = "package.json";
+            const manifest = await Bun.file(path).json();
+            manifest.version = process.argv[1];
+            await Bun.write(path, JSON.stringify(manifest, null, 2) + "\n");
+          ' "$version"
+          test "$(bun --eval 'console.log((await Bun.file("package.json").json()).version)')" = "$version"
       - run: bun build --compile --target=${{ matrix.target }} ./src/cli.ts --outfile=agent-mesh
+      # What the artifact answers, checked on the artifact rather than assumed
+      # from the input. Only where the runner can execute what it just built.
+      - if: runner.os == 'Linux' || matrix.target == 'bun-darwin-arm64'
+        run: test "$(./agent-mesh --version)" = "${GITHUB_REF_NAME#v}"
       - run: tar -czf agent-mesh-${{ matrix.asset }}.tar.gz agent-mesh
       - uses: actions/upload-artifact@v4
         with:
