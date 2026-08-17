@@ -179,6 +179,26 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The hub pushes what accumulated while an identity was away, on connect. A lane that only listens -- this client never calls mesh.receive -- has no other way to see it, and until v0.21.0 nothing stated the guarantee.",
+    file: RUNNER,
+    find: 'if (message.method === "mesh.message") delivered += 1;',
+    replace: "// counted nothing",
+    command: scenario("E2E-CONNECT-001"),
+    slow: true,
+    evidence: "expected 1 pushed message(s) after connect, got 0",
+  },
+  {
+    defect:
+      "A non-2xx with a body that is not JSON-RPC shaped read as success: a 404 saying \"Not Found\" has neither `ok: false` nor an `error`, so a send against a renamed route passed and the scenario failed two steps later on a message never sent. That is exactly what the mailbox split produced.",
+    file: RUNNER,
+    find: '"POST", "/api/v1/mailbox/out"',
+    replace: '"POST", "/api/v1/outbox"',
+    command: scenario("E2E-CONNECT-001"),
+    slow: true,
+    evidence: 'expected success, got error {"code":404,"message":"Not Found"}',
+  },
+  {
+    defect:
       "A mesh requirement asked for but not honoured leaves E2E-RECEIVE-002 passing without ever reaching the lapse it exists to show.",
     file: RUNNER,
     find: "String(requirement.receiveLeaseSeconds)]",

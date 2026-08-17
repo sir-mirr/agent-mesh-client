@@ -290,7 +290,17 @@ async function rpc(
   identity: Identity,
   method: string,
   params: Record<string, unknown>,
-): Promise<RpcOutcome> {
+  /**
+   * How many server-pushed `mesh.message` notifications to wait for after the
+   * call succeeds, or null to close as soon as it answers.
+   *
+   * Polled to a deadline rather than slept on. A fixed sleep is either too long
+   * for every run or too short for one, and the short one fails as a flake --
+   * which reads as the guarantee not existing rather than as the test being
+   * impatient.
+   */
+  expectDelivered: number | null = null,
+): Promise<RpcOutcome & { delivered: number }> {
   const socket = new WebSocket(mesh.rpcWs);
   try {
     await new Promise<void>((resolve, reject) => {
@@ -315,6 +325,19 @@ async function rpc(
         identity.privateKey,
       ).toString("base64url"),
     };
+    // Counted from the moment the socket opens, not from after the call
+    // returns: the hub may push before the response is written, and a listener
+    // attached later would miss exactly the delivery under test.
+    let delivered = 0;
+    socket.addEventListener("message", (event) => {
+      let message: any;
+      try {
+        message = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (message.method === "mesh.message") delivered += 1;
+    });
     const answer = new Promise<RpcOutcome>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`hub request timed out: ${method}`)), 20_000);
       socket.addEventListener("message", (event) => {
@@ -338,7 +361,14 @@ async function rpc(
         "utf8",
       )},"sig":${JSON.stringify(signature)}}`,
     );
-    return await answer;
+    const outcome = await answer;
+    if (expectDelivered !== null && !outcome.error) {
+      const deadline = Date.now() + 15_000;
+      while (delivered < expectDelivered && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    return { ...outcome, delivered };
   } finally {
     try {
       socket.close();
@@ -444,8 +474,27 @@ function assertRpc(expect: { error?: number | null; dataCode?: string } | undefi
   }
 }
 
-/** The signed REST surfaces answer JSON-RPC errors in an HTTP envelope. */
+/**
+ * The signed REST surfaces answer JSON-RPC errors in an HTTP envelope.
+ *
+ * The status is read first. A 404 carrying the plain string "Not Found" has
+ * neither `ok: false` nor an `error` object, so it used to arrive here as a
+ * success -- which is how a `send` against a route that had been renamed away
+ * passed, and left the scenario failing two steps later on a message that was
+ * never sent.
+ */
 function asRpcOutcome(got: HttpOutcome): RpcOutcome {
+  if (got.status < 200 || got.status >= 300) {
+    const error = typeof got.body?.error === "object" ? got.body.error : null;
+    return {
+      error: {
+        code: error?.code ?? got.body?.rpc_code ?? got.status,
+        message: error?.message ?? String(got.body?.error ?? got.body ?? ""),
+        data: error?.data ?? (got.body?.code ? { code: got.body.code } : undefined),
+      },
+      result: null,
+    };
+  }
   if (got.body?.ok === false || got.body?.error) {
     const error = typeof got.body?.error === "object" ? got.body.error : null;
     return {
@@ -554,14 +603,24 @@ async function runStep(
     case "connect": {
       const identity = registry.get(step.identity);
       if (!identity) fail(`${step.identity} was never provisioned in this run`);
-      assertRpc(step.expect, await rpc(mesh, identity, "mesh.connect", { identity: step.identity }));
+      const got = await rpc(
+        mesh,
+        identity,
+        "mesh.connect",
+        { identity: step.identity },
+        step.expectDelivered ?? null,
+      );
+      assertRpc(step.expect, got);
+      if (step.expectDelivered !== undefined && got.delivered !== step.expectDelivered) {
+        fail(`expected ${step.expectDelivered} pushed message(s) after connect, got ${got.delivered}`);
+      }
       return;
     }
 
     case "send": {
       const from = registry.get(step.from);
       if (!from) fail(`${step.from} was never provisioned in this run`);
-      const got = await http(from, mesh.apiHttp, "POST", "/api/v1/outbox", {
+      const got = await http(from, mesh.apiHttp, "POST", "/api/v1/mailbox/out", {
         to: step.to,
         content: step.content,
         ...(step.clientMessageId ? { client_message_id: step.clientMessageId } : {}),
@@ -575,7 +634,7 @@ async function runStep(
       if (!identity) fail(`${step.identity} was never provisioned in this run`);
       // Acknowledgement and the next lease are one call, which is what makes
       // "settle the previous batch" atomic (§ 8.10.1).
-      const got = await http(identity, mesh.apiHttp, "POST", "/api/v1/inbox", {
+      const got = await http(identity, mesh.apiHttp, "POST", "/api/v1/mailbox/in", {
         ...(step.ackPrevious ? { ack_ids: leases.get(step.identity) ?? [] } : {}),
       });
       if (got.status !== 200) fail(`receive returned HTTP ${got.status}: ${short(got.body)}`);
