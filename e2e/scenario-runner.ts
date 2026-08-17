@@ -48,7 +48,6 @@ import {
   type Scenario,
   type Step,
 } from "@agent-mesh/contracts";
-import { PROPOSED_SCENARIOS } from "./proposals";
 
 /**
  * The platform checkout whose harness this run drives.
@@ -229,7 +228,11 @@ async function http(
           kid: identity.fingerprint,
           nonce,
           iat,
-          bodySha256: createHash("sha256").update(payload, "utf8").digest("hex"),
+          // Empty string, not the digest of an empty string. The contract says
+          // so and the hub agrees; hashing unconditionally signs a preimage the
+          // verifier never builds, which fails only on the bodyless
+          // methods -- so every signed POST passed while DELETE could not work.
+          bodySha256: payload ? createHash("sha256").update(payload, "utf8").digest("hex") : "",
         }),
         identity.privateKey,
       ).toString("base64url"),
@@ -348,6 +351,31 @@ function short(value: unknown): string {
   return JSON.stringify(value).slice(0, 240);
 }
 
+/**
+ * Replaces `{{name}}` with a bound value. Substitution, never evaluation.
+ *
+ * An unbound name is an error rather than a literal left in place. A `DELETE
+ * /api/v1/outbox/{{taken}}` that reached the mesh verbatim would answer 404 --
+ * the status a later step legitimately expects -- so a missing binding would
+ * read as the scenario passing.
+ */
+function substitute<T>(value: T, bindings: Map<string, string>): T {
+  if (typeof value === "string") {
+    return value.replace(/\{\{([^}]+)\}\}/g, (_, name: string) => {
+      const bound = bindings.get(name);
+      if (bound === undefined) fail(`no binding for {{${name}}}`);
+      return bound;
+    }) as unknown as T;
+  }
+  if (Array.isArray(value)) return value.map((item) => substitute(item, bindings)) as unknown as T;
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, substitute(item, bindings)]),
+    ) as T;
+  }
+  return value;
+}
+
 /** Reads a dotted path, distinguishing "absent" from a stored `undefined`. */
 function atPath(body: unknown, path: string): { found: boolean; value: unknown } {
   let cursor: any = body;
@@ -412,12 +440,38 @@ function asRpcOutcome(got: HttpOutcome): RpcOutcome {
 /** Identities outlive a scenario: the set is one ordered run against one mesh. */
 type Registry = Map<string, Identity>;
 
+/** Captures the paths a step asked to remember. */
+function applyBind(
+  bind: Record<string, string> | undefined,
+  body: unknown,
+  bindings: Map<string, string>,
+): void {
+  for (const [name, path] of Object.entries(bind ?? {})) {
+    const { found, value } = atPath(body, path);
+    if (!found) fail(`cannot bind ${name}: the response has no ${path}: ${short(body)}`);
+    bindings.set(name, String(value));
+  }
+}
+
 async function runStep(
   mesh: Mesh,
   registry: Registry,
   leases: Map<string, string[]>,
-  step: Step & Record<string, any>,
+  bindings: Map<string, string>,
+  raw: Step & Record<string, any>,
 ): Promise<void> {
+  // Resolved once, here, for every verb. The contract names `path`, `body` and
+  // `expect.body` as the substitutable places; doing it per-verb is how a step
+  // ends up quietly unsubstituted while still reporting green.
+  const step = {
+    ...raw,
+    ...(raw.path !== undefined ? { path: substitute(raw.path, bindings) } : {}),
+    ...(raw.body !== undefined ? { body: substitute(raw.body, bindings) } : {}),
+    ...(raw.expect?.body !== undefined
+      ? { expect: { ...raw.expect, body: substitute(raw.expect.body, bindings) } }
+      : {}),
+  } as Step & Record<string, any>;
+
   switch (step.do) {
     case "provision": {
       let identity = registry.get(step.identity);
@@ -431,6 +485,9 @@ async function runStep(
       // Recorded even when the call is expected to be refused: a later step may
       // need this key to show that the refusal held.
       registry.set(step.identity, identity!);
+      // Pre-bound because no response carries it -- the fingerprint exists in
+      // this runner and nowhere on the wire, so `bind` cannot reach it.
+      bindings.set(`fingerprint:${step.identity}`, identity!.fingerprint);
       const got = await http(null, mesh.apiHttp, "POST", "/api/v1/agents", {
         identity: step.identity,
         type: step.type,
@@ -494,15 +551,21 @@ async function runStep(
       if (step.expectCount !== undefined && messages.length !== step.expectCount) {
         fail(`expected ${step.expectCount} message(s), got ${messages.length}: ${short(got.body)}`);
       }
+      applyBind(step.bind, got.body, bindings);
       return;
     }
 
     case "http": {
-      // `as` names an authority, not an identity: admin routes live on the
-      // operator service and the unauthenticated ones on the hub.
+      // `as` names an authority, not a base URL: the operator session belongs to
+      // the admin service, and both `none` and a signed participant address the
+      // hub. A signed caller needs an identity this run generated, since the
+      // signature is over a key no scenario can carry.
       const admin = step.as === "admin";
+      const signedBy = typeof step.as === "object" && step.as !== null ? step.as.signedBy : null;
+      const signer = signedBy ? registry.get(signedBy) : null;
+      if (signedBy && !signer) fail(`${signedBy} was never provisioned in this run`);
       const got = await http(
-        null,
+        signer ?? null,
         admin ? mesh.baseUrl : mesh.apiHttp,
         step.method,
         step.path,
@@ -510,6 +573,7 @@ async function runStep(
         admin ? await adminCookie(mesh) : undefined,
       );
       assertHttp(step.expect, got);
+      applyBind(step.bind, got.body, bindings);
       return;
     }
 
@@ -523,7 +587,12 @@ async function runStep(
   }
 }
 
-async function runScenario(mesh: Mesh, registry: Registry, scenario: Scenario): Promise<ScenarioResult> {
+async function runScenario(
+  mesh: Mesh,
+  registry: Registry,
+  bindings: Map<string, string>,
+  scenario: Scenario,
+): Promise<ScenarioResult> {
   const leases = new Map<string, string[]>();
   const steps: StepResult[] = [];
   let failed = false;
@@ -542,7 +611,7 @@ async function runScenario(mesh: Mesh, registry: Registry, scenario: Scenario): 
     }
     if (failed) break;
     try {
-      await runStep(mesh, registry, leases, step as Step & Record<string, any>);
+      await runStep(mesh, registry, leases, bindings, step as Step & Record<string, any>);
       steps.push({ step: index + 1, verb: step.do, outcome: "passed" });
     } catch (error) {
       steps.push({
@@ -563,18 +632,8 @@ async function runScenario(mesh: Mesh, registry: Registry, scenario: Scenario): 
   };
 }
 
-/**
- * `--proposals` adds this repository's candidate scenarios to the run.
- *
- * Off by default and reported separately, because they are not the contract.
- * A run that folded them into the total would report local agreement as
- * cross-repository agreement, which is the confusion the shared list ends.
- */
-const wantProposals = process.argv.includes("--proposals");
 const only = process.argv.slice(2).find((argument) => !argument.startsWith("--"));
-const pool = wantProposals ? [...E2E_SCENARIOS, ...PROPOSED_SCENARIOS] : E2E_SCENARIOS;
-const proposed = new Set(PROPOSED_SCENARIOS.map((scenario) => scenario.id));
-const selected = only ? pool.filter((s) => s.id === only) : pool;
+const selected = only ? E2E_SCENARIOS.filter((s) => s.id === only) : E2E_SCENARIOS;
 if (selected.length === 0) {
   process.stderr.write(`no scenario matches ${only}\n`);
   process.exit(2);
@@ -592,7 +651,17 @@ if (shared.length > 0) {
   process.stdout.write(`[runner] mesh for ${shared.length} shared scenario(s) — platform ${mesh.provenance}\n`);
   const registry: Registry = new Map();
   try {
-    for (const scenario of shared) results.push(await runScenario(mesh, registry, scenario));
+    // Bindings live with the identities they name: `fingerprint:<identity>` is
+    // derived from a key the registry holds, so the two must not outlive each
+    // other. `bind` names are cleared per scenario so a stale value cannot be
+    // silently reused by a scenario that forgot to capture its own.
+    const bindings = new Map<string, string>();
+    for (const scenario of shared) {
+      for (const name of [...bindings.keys()]) {
+        if (!name.startsWith("fingerprint:")) bindings.delete(name);
+      }
+      results.push(await runScenario(mesh, registry, bindings, scenario));
+    }
   } finally {
     mesh.stop();
   }
@@ -609,7 +678,7 @@ for (const scenario of selected.filter((s) => s.mesh)) {
     `[runner] mesh ${JSON.stringify(scenario.mesh)} for ${scenario.id} — platform ${mesh.provenance}\n`,
   );
   try {
-    results.push(await runScenario(mesh, new Map(), scenario));
+    results.push(await runScenario(mesh, new Map(), new Map(), scenario));
   } finally {
     mesh.stop();
   }
@@ -618,11 +687,10 @@ for (const scenario of selected.filter((s) => s.mesh)) {
 process.stdout.write("\n");
 for (const result of results) {
   const mark = result.outcome === "passed" ? "ok" : result.outcome === "failed" ? "FAIL" : "partial";
-  const origin = proposed.has(result.id) ? "proposal" : "contract";
-  process.stdout.write(`${mark.padEnd(8)} ${origin.padEnd(9)} ${result.id.padEnd(18)} ${result.clause}\n`);
+  process.stdout.write(`${mark.padEnd(8)} ${result.id.padEnd(18)} ${result.clause}\n`);
   for (const step of result.steps) {
     if (step.outcome === "passed") continue;
-    process.stdout.write(`                  step ${step.step} ${step.verb}: ${step.outcome} — ${step.detail}\n`);
+    process.stdout.write(`         step ${step.step} ${step.verb}: ${step.outcome} — ${step.detail}\n`);
   }
 }
 
@@ -631,19 +699,9 @@ for (const result of results) {
 // this cost both sides half an hour on a refusal that had shipped long before.
 process.stdout.write(`\nplatform: ${[...provenances].join(", ") || "unknown"}\n`);
 
-const shared_ = results.filter((r) => !proposed.has(r.id));
-const failedCount = shared_.filter((r) => r.outcome === "failed").length;
-const skippedSteps = shared_.flatMap((r) => r.steps).filter((s) => s.outcome === "skipped").length;
+const failedCount = results.filter((r) => r.outcome === "failed").length;
+const skippedSteps = results.flatMap((r) => r.steps).filter((s) => s.outcome === "skipped").length;
 process.stdout.write(
-  `\n${shared_.length - failedCount}/${shared_.length} contract scenarios, ${skippedSteps} step(s) skipped\n`,
+  `\n${results.length - failedCount}/${results.length} contract scenarios, ${skippedSteps} step(s) skipped\n`,
 );
-const proposals = results.filter((r) => proposed.has(r.id));
-if (proposals.length > 0) {
-  const proposalsPassed = proposals.filter((r) => r.outcome !== "failed").length;
-  process.stdout.write(
-    `${proposalsPassed}/${proposals.length} proposed scenarios (not the contract; see e2e/proposals.ts)\n`,
-  );
-}
-// Only the contract decides the exit status. A proposal that fails is this
-// side discovering its proposal is wrong, not the mesh being broken.
 process.exit(failedCount === 0 ? 0 : 1);
