@@ -36,7 +36,13 @@
  */
 
 import { spawn } from "node:child_process";
-import { createHash, generateKeyPairSync, randomUUID, sign as edSign } from "node:crypto";
+import {
+  createHash,
+  generateKeyPairSync,
+  randomUUID,
+  sign as edSign,
+  type KeyObject,
+} from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -96,7 +102,7 @@ interface Mesh {
 interface Identity {
   name: string;
   publicKey: string;
-  privateKey: ReturnType<typeof generateKeyPairSync<"ed25519">>["privateKey"];
+  privateKey: KeyObject;
   fingerprint: string;
 }
 
@@ -470,19 +476,25 @@ async function runStep(
   registry: Registry,
   leases: Map<string, string[]>,
   bindings: Map<string, string>,
-  raw: Step & Record<string, any>,
+  raw: Step,
 ): Promise<void> {
   // Resolved once, here, for every verb. The contract names `path`, `body` and
   // `expect.body` as the substitutable places; doing it per-verb is how a step
   // ends up quietly unsubstituted while still reporting green.
-  const step = {
+  //
+  // Read through a loose view rather than typing `step` loosely. An earlier
+  // draft made the whole step `Step & Record<string, any>`, which silently
+  // defeated the exhaustiveness check below -- deleting a verb's case still
+  // typechecked, so the guard against an unhandled verb was decoration.
+  const loose = raw as { path?: string; body?: unknown; expect?: ExpectHttp };
+  const step: Step = {
     ...raw,
-    ...(raw.path !== undefined ? { path: substitute(raw.path, bindings) } : {}),
-    ...(raw.body !== undefined ? { body: substitute(raw.body, bindings) } : {}),
-    ...(raw.expect?.body !== undefined
-      ? { expect: { ...raw.expect, body: substitute(raw.expect.body, bindings) } }
+    ...(loose.path !== undefined ? { path: substitute(loose.path, bindings) } : {}),
+    ...(loose.body !== undefined ? { body: substitute(loose.body, bindings) } : {}),
+    ...(loose.expect?.body !== undefined
+      ? { expect: { ...loose.expect, body: substitute(loose.expect.body, bindings) } }
       : {}),
-  } as Step & Record<string, any>;
+  } as Step;
 
   switch (step.do) {
     case "provision": {
@@ -522,7 +534,7 @@ async function runStep(
         headers: { cookie: await adminCookie(mesh), "content-type": "application/json" },
         body: JSON.stringify({
           fingerprint: identity.fingerprint,
-          ...(step.reason ? { reason: step.reason } : {}),
+          ...(step.do === "revoke" ? { reason: step.reason } : {}),
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -593,9 +605,18 @@ async function runStep(
       await new Promise((resolve) => setTimeout(resolve, step.seconds * 1_000));
       return;
 
-    default:
-      // Not silently ignored: a step nobody ran must not read as one that passed.
-      fail(`verb not implemented by this runner: ${(step as any).do}`);
+    default: {
+      // Two guards for one rule, because they fail at different times.
+      //
+      // The `never` binding is the one that matters: a verb added to the
+      // contract and not handled here stops `bun run check` before a mesh is
+      // ever started, so the gap cannot reach a run. The throw is what remains
+      // if the two ever disagree -- a step nobody ran must not read as one that
+      // passed, which is the failure § 17.3 exists to forbid and the one the
+      // platform's runner had while citing that clause.
+      const unhandled: never = step;
+      fail(`verb not implemented by this runner: ${(unhandled as { do: string }).do}`);
+    }
   }
 }
 
@@ -612,7 +633,7 @@ async function runScenario(
   for (const [index, step] of scenario.steps.entries()) {
     if (failed) break;
     try {
-      await runStep(mesh, registry, leases, bindings, step as Step & Record<string, any>);
+      await runStep(mesh, registry, leases, bindings, step);
       steps.push({ step: index + 1, verb: step.do, outcome: "passed" });
     } catch (error) {
       steps.push({
