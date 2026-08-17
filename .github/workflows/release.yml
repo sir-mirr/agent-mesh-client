@@ -72,6 +72,16 @@ jobs:
       - if: runner.os == 'Linux' || matrix.target == 'bun-darwin-arm64'
         run: test "$(./agent-mesh --version)" = "${GITHUB_REF_NAME#v}"
       - run: tar -czf agent-mesh-${{ matrix.asset }}.tar.gz agent-mesh
+      # Pinned at v4 deliberately. It targets Node 20, which the runners now
+      # force onto Node 24 with a deprecation warning, so this needs bumping —
+      # but v4 -> v7 crosses three majors, `download-artifact` is at v8, and
+      # the `merge-multiple` the publish job depends on may not have survived
+      # them. Neither manifest could be read at the time of writing.
+      #
+      # Not bumped blind: this is the one path a release goes through, it was
+      # verified end to end for v0.1.1, and the only way to test a change here
+      # is to cut another tag. Bump it, read both manifests, and cut a patch
+      # release whose only content is that change.
       - uses: actions/upload-artifact@v4
         with:
           name: agent-mesh-${{ matrix.asset }}
