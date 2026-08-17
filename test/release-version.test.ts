@@ -39,9 +39,14 @@ describe("release version injection", () => {
   // The workflow is the only caller, and a workflow that stopped calling this
   // would leave every test above passing while releases went back to shipping
   // whatever the manifest happened to say.
+  // Comments do not run. The first version of this searched the whole file, and
+  // a mutation deleting the run step left it passing -- because the comment
+  // above that step names the script. An assertion satisfied by prose about the
+  // code is not an assertion about the code.
   test("the release workflow calls this and holds no version logic of its own", async () => {
     const workflow = await Bun.file(".github/workflows/release.yml").text();
-    expect(workflow).toContain("scripts/set-version.ts");
-    expect(workflow).not.toContain("manifest.version =");
+    const steps = workflow.split("\n").filter((line) => !line.trim().startsWith("#"));
+    expect(steps.some((line) => /^\s*-?\s*run:.*scripts\/set-version\.ts/.test(line))).toBe(true);
+    expect(steps.join("\n")).not.toContain("manifest.version =");
   });
 });
