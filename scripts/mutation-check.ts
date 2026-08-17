@@ -38,8 +38,24 @@ interface Entry extends Mutation {
   defect: string;
   /** Minutes, roughly: does this stand up a mesh? */
   slow?: boolean;
-  /** Overrides the marker derived from the command. Only the self-check needs it. */
-  evidence?: string;
+  /**
+   * What the mutated run must print for its exit code to be a verdict.
+   *
+   * Names the check that fired, not merely that something did. A summary line
+   * or a scenario id appears whether the assertion caught the mutation or the
+   * mesh refused to start, so a run that never reached the check was recorded
+   * as the guard working -- which happened here to the lease entry.
+   *
+   * **Collected, never predicted.** Every string below came from running the
+   * mutation and reading what it said. A predicted message is a copy of a
+   * format that lives in another file; a collected one still copies it, but
+   * gets it wrong loudly on the next run rather than quietly.
+   *
+   * No step numbers: v0.18.0 inserted a step into E2E-AUDIT-001, and an
+   * expectation anchored to `step 2` would have failed for a reason having
+   * nothing to do with the guard it names.
+   */
+  evidence: string;
 }
 
 const RUNNER = "e2e/scenario-runner.ts";
@@ -49,27 +65,6 @@ const scopeTest = ["bun", "test", SCOPE];
 const typecheck = ["bun", "run", "check"];
 
 type Outcome = "caught" | "NOT CAUGHT" | "REFUSED" | "INCONCLUSIVE";
-
-/**
- * What the mutated run must print for its exit code to mean anything.
- *
- * `caught` was a non-zero exit alone. A child that dies before it reports --
- * a crash, an OOM, a harness that never bound its port -- also exits non-zero,
- * and was recorded as the guard doing its job. That is a wrong finding about a
- * guard rather than a true one about a run, which is the distinction this whole
- * file exists to hold; the mesh-backed entries make it likely rather than
- * theoretical, since starting a real hub is a thing that can simply fail.
- *
- * Derived from the command instead of restated per entry, and unknown commands
- * throw rather than defaulting: a marker chosen by fallback would match
- * whatever, which is the same silence in a new place.
- */
-function evidenceOf(command: string[]): string {
-  if (command[1] === RUNNER) return "contract scenarios";
-  if (command[1] === "test") return "Ran ";
-  if (command[1] === "run" && command[2] === "check") return "error TS";
-  throw new Error(`no evidence marker known for: ${command.join(" ")}`);
-}
 
 /**
  * The contract pin, read rather than written down here.
@@ -93,6 +88,7 @@ const MUTATIONS: Entry[] = [
     find: `agent-mesh-contracts#v${CONTRACT_PIN}"`,
     replace: `agent-mesh-contracts#v${CONTRACT_PIN}9"`,
     command: ["bun", "test", "test/doc-pins.test.ts"],
+    evidence: "documented contract pin > README.md states the installed version",
   },
   {
     defect:
@@ -101,6 +97,7 @@ const MUTATIONS: Entry[] = [
     find: ', "e2e/**/*.ts"',
     replace: "",
     command: scopeTest,
+    evidence: "typecheck scope > covers every TypeScript file in the repository",
   },
   {
     defect:
@@ -109,6 +106,7 @@ const MUTATIONS: Entry[] = [
     find: '"src/**/*.ts", "test/**/*.ts", "e2e/**/*.ts", "scripts/**/*.ts", ".claude/hooks/**/*.ts"',
     replace: '"**/*.ts"',
     command: scopeTest,
+    evidence: "typecheck scope > no include pattern covers the repository vacuously",
   },
   {
     defect:
@@ -117,6 +115,7 @@ const MUTATIONS: Entry[] = [
     find: '"--exclude-standard", "*.ts"',
     replace: '"--exclude-standard", "src/*.ts"',
     command: scopeTest,
+    evidence: "typecheck scope > the enumeration actually reaches the repository",
   },
   {
     defect:
@@ -125,6 +124,7 @@ const MUTATIONS: Entry[] = [
     find: '    case "sleep":',
     replace: '    case "never-emitted":',
     command: typecheck,
+    evidence: "is not assignable to type 'never'",
   },
   {
     defect:
@@ -133,6 +133,7 @@ const MUTATIONS: Entry[] = [
     find: "substitute(loose.expect.body, bindings)",
     replace: "loose.expect.body",
     command: scenario("E2E-KEY-003"),
+    evidence: "expected key.fingerprint = \"{{fingerprint:e2e-restart}}\"",
     slow: true,
   },
   {
@@ -142,6 +143,7 @@ const MUTATIONS: Entry[] = [
     find: "Object.entries(bind ?? {})",
     replace: "Object.entries({} as Record<string, string>)",
     command: scenario("E2E-RECALL-001"),
+    evidence: "no binding for {{taken}}",
     slow: true,
   },
   {
@@ -151,6 +153,7 @@ const MUTATIONS: Entry[] = [
     find: "signer ?? null,",
     replace: "null,",
     command: scenario("E2E-RECALL-001"),
+    evidence: "expected HTTP 409, got 401",
     slow: true,
   },
   {
@@ -161,6 +164,7 @@ const MUTATIONS: Entry[] = [
     find: "`${base}${path}`",
     replace: '`${base}${path.replace(/=[^&]*/g, "=no-such-value")}`',
     command: scenario("E2E-SOURCE-001"),
+    evidence: "but the body has no sources.0.identity",
     slow: true,
   },
   {
@@ -170,6 +174,7 @@ const MUTATIONS: Entry[] = [
     find: "    if (wanted === null) {",
     replace: "    if (false) {",
     command: scenario("E2E-AUDIT-001"),
+    evidence: "but the body has no events.0",
     slow: true,
   },
   {
@@ -225,6 +230,7 @@ const SELF_CHECK: (Entry & { mustFailAs: Outcome })[] = [
     find: "Every TypeScript file in this repository is inside the checked scope.",
     replace: "Every TypeScript file in this repository is within the checked scope.",
     command: scopeTest,
+    evidence: "unused: this entry must not fail at all",
   },
   {
     defect: "TEMPORARY: a pattern that is no longer present, as a rename would leave it.",
@@ -233,6 +239,7 @@ const SELF_CHECK: (Entry & { mustFailAs: Outcome })[] = [
     find: "a-string-this-file-does-not-contain",
     replace: "irrelevant",
     command: scopeTest,
+    evidence: "unused: this entry is refused before anything runs",
   },
   {
     // The third way a run says nothing: it exits non-zero having never reached
@@ -254,7 +261,7 @@ async function evaluate(entry: Entry): Promise<{ outcome: Outcome; detail: strin
   try {
     const { exitCode, output } = await runMutation(entry);
     if (exitCode === 0) return { outcome: "NOT CAUGHT", detail: entry.defect };
-    const evidence = entry.evidence ?? evidenceOf(entry.command);
+    const evidence = entry.evidence;
     if (!output.includes(evidence)) {
       return {
         outcome: "INCONCLUSIVE",
@@ -294,6 +301,22 @@ if (process.argv.includes("--self-check")) {
   // the place to stop was chosen by going one layer further and watching it
   // bite rather than by deciding where it felt like enough.
   process.exit(wrong === 0 ? 0 : 1);
+}
+
+// `--collect` prints what each mutated run actually said, so an entry's
+// evidence can be taken from a real run instead of guessed. A predicted
+// message is a copy of a format that lives somewhere else; a collected one is
+// wrong loudly on the next run when that format changes.
+if (process.argv.includes("--collect")) {
+  for (const entry of MUTATIONS) {
+    const { exitCode, output } = await runMutation(entry);
+    const interesting = output
+      .split("\n")
+      .filter((line) => /step \d+|error TS|\(fail\)|harness applied|Error:/.test(line));
+    process.stdout.write(`--- ${entry.command.slice(1).join(" ")} (exit ${exitCode})\n`);
+    for (const line of interesting.slice(0, 3)) process.stdout.write(`    ${line.trim()}\n`);
+  }
+  process.exit(0);
 }
 
 const fast = process.argv.includes("--fast");
