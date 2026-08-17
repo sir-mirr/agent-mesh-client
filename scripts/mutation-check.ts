@@ -110,11 +110,11 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
-      "Three clauses were asserted only through a status code once `expectStored` was removed; without the query string the operator routes answer with whatever row is first. " +
-      "That first row is wrong today because the shared mesh carries other scenarios' traffic — a situation, not a design. If E2E-SOURCE-001 ever takes a `mesh` requirement of its own it gets an empty mesh, its own row becomes the first one, and this entry goes quietly meaningless.",
+      "Three clauses are asserted through operator routes that only answer correctly because of their query string; a runner dropping it would leave them checking a status code.\n" +
+      "            Corrupts the filter values rather than removing the query, which the first version did. Removing it depends on some other row being first, and running this scenario alone gives it a mesh where its own row is first — so the guard passed against a runner that had stopped filtering. It was already flaky when committed, and said so in this very description.",
     file: RUNNER,
     find: "`${base}${path}`",
-    replace: '`${base}${path.split("?")[0]}`',
+    replace: '`${base}${path.replace(/=[^&]*/g, "=no-such-value")}`',
     command: scenario("E2E-SOURCE-001"),
     slow: true,
   },
