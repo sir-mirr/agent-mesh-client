@@ -48,13 +48,27 @@ const typecheck = ["bun", "run", "check"];
 
 type Outcome = "caught" | "NOT CAUGHT" | "REFUSED";
 
+/**
+ * The contract pin, read rather than written down here.
+ *
+ * A literal `v0.18.0` in the entry below would go stale on the next bump and
+ * refuse -- loudly, but for a reason that has nothing to do with the guard it
+ * names, and every bump would need this file edited to match. The version has
+ * one home, and the same reasoning removed the ignore list from the scope test
+ * and the backup copy from the mutation tool.
+ */
+const CONTRACT_PIN = (
+  JSON.parse(await Bun.file("package.json").text()) as { dependencies: Record<string, string> }
+).dependencies["@agent-mesh/contracts"]!.match(/#v(\d+\.\d+\.\d+)/)?.[1];
+if (!CONTRACT_PIN) throw new Error("package.json does not pin @agent-mesh/contracts to a tag");
+
 const MUTATIONS: Entry[] = [
   {
     defect:
       "Both READMEs stated the contract pin three tags behind, were corrected by hand, and drifted again within the hour. Nothing else in the repository reads those lines.",
     file: "package.json",
-    find: 'agent-mesh-contracts#v0.18.0"',
-    replace: 'agent-mesh-contracts#v0.19.0"',
+    find: `agent-mesh-contracts#v${CONTRACT_PIN}"`,
+    replace: `agent-mesh-contracts#v${CONTRACT_PIN}9"`,
     command: ["bun", "test", "test/doc-pins.test.ts"],
   },
   {

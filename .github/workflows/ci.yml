@@ -26,4 +26,16 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun test
+      # The mutation set exists to make "this was mutation tested" re-runnable
+      # instead of a sentence in a commit message. Nobody re-running it leaves
+      # it exactly as stale as the sentence it replaced.
+      #
+      # `--fast` because the rest stand up a real hub through the platform
+      # harness, which is not checked out here; the run says how many it
+      # skipped rather than reporting a partial pass as a whole one.
+      - run: bun run mutation-check -- --fast
+      # And the inversion, which is what says the reporting branch still works.
+      # A set where everything is caught never executes the code that says
+      # something was not.
+      - run: bun run mutation-check -- --self-check
       - run: bun run build

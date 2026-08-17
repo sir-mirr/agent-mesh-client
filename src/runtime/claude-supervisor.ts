@@ -215,16 +215,16 @@ export class ClaudeSupervisor {
   /**
    * Gates the CLI raises before it will accept a turn, answered by keystroke.
    *
-   * Both are consequences of how the daemon launches this lane, not decisions
+   * Each is a consequence of how the daemon launches this lane, not a decision
    * left to whoever happens to attach later: the development-channel warning
    * exists because the daemon passes that flag, and the trust prompt names the
    * workspace the operator configured on the lane. A lane is there to answer
-   * without a person at the keyboard, and neither gate is persisted -- the
+   * without a person at the keyboard, and no gate here is persisted -- the
    * channel warning is asked again on every start -- so a session left to ask
    * blocks on its first turn, every time.
    *
-   * Nothing else is answered here. Anything the CLI asks that is not one of
-   * these two stays on screen and shows up as `awaiting-input`, which is the
+   * Nothing else is answered here. Anything the CLI asks that is not in the
+   * list below stays on screen and shows up as `awaiting-input`, which is the
    * state that exists to send a person to the session.
    */
   async #confirmStartupGates(tmux: string): Promise<void> {
