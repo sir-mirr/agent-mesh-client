@@ -212,7 +212,9 @@ AGENT_MESH_E2E_READY_FILE=/tmp/mesh-ready.json bun run test:e2e:live
 bun run test:e2e:scenarios
 ```
 
-플랫폼 저장소가 이 저장소 옆에 있다고 가정하고, 다른 위치면 `AGENT_MESH_E2E_PLATFORM`으로 지정합니다. 불일치는 계약 결함이므로 여기서 고치지 않고 플랫폼 쪽에 보고합니다.
+이 저장소 옆의 `../agent-mesh-platform-main`을 사용하고, 다른 위치면 `AGENT_MESH_E2E_PLATFORM`으로 지정합니다. 접미사가 중요합니다 — 옆의 feature worktree가 대신 응답한 적이 있고, 그 결과 40커밋 전에 이미 고쳐진 거절을 결함이라고 확신 있게 보고했습니다. 매 실행은 어떤 플랫폼 commit을 돌렸는지 함께 출력하며, 불일치는 그 값과 같이 있을 때만 보고할 가치가 있습니다.
+
+불일치는 계약 결함이므로 여기서 고치지 않고 플랫폼 쪽에 보고합니다.
 
 ### 문서
 

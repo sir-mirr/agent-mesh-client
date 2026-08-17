@@ -212,7 +212,9 @@ The shared cross-repository scenarios (`E2E_SCENARIOS` in the contract) have the
 bun run test:e2e:scenarios
 ```
 
-It expects the platform checkout beside this one; `AGENT_MESH_E2E_PLATFORM` points elsewhere. A mismatch is a contract defect and is reported to the platform side rather than fixed here.
+It expects `../agent-mesh-platform-main` beside this checkout; `AGENT_MESH_E2E_PLATFORM` points elsewhere. The suffix matters — a sibling feature worktree once answered instead, and the run produced a confident report about a refusal that had shipped forty commits earlier. Every run prints the platform commit it drove, and a mismatch is only worth reporting with it.
+
+A mismatch is a contract defect: report it to the platform side rather than fixing it here.
 
 ### Documents
 

@@ -44,14 +44,24 @@ import {
   keyFingerprint,
   requestSignaturePreimage,
   restSignaturePreimage,
+  type ExpectHttp,
   type Scenario,
   type Step,
 } from "@agent-mesh/contracts";
 import { PROPOSED_SCENARIOS } from "./proposals";
 
+/**
+ * The platform checkout whose harness this run drives.
+ *
+ * `-main` is not decoration. The sibling directory without it is a feature
+ * worktree, and a run against it once produced a confident bug report about a
+ * refusal that had shipped forty commits earlier -- the mesh was fine and the
+ * tree was old. Which tree answered is part of the result, which is why the
+ * report prints the revision the ready file declares.
+ */
 const PLATFORM =
   process.env.AGENT_MESH_E2E_PLATFORM ??
-  join(import.meta.dir, "..", "..", "agent-mesh-platform");
+  join(import.meta.dir, "..", "..", "agent-mesh-platform-main");
 
 /** Verbs whose evidence lives in the platform's own store (§ 17.3). */
 const UNRUNNABLE = new Set(["expectStored"]);
@@ -67,6 +77,8 @@ interface Mesh {
   revokeUrl: string;
   loginUrl: string;
   loginBody: string;
+  /** What answered, as the harness declares it. Printed with the result. */
+  provenance: string;
   stop: () => void;
 }
 
@@ -108,13 +120,28 @@ function makeIdentity(name: string): Identity {
 // The mesh
 // ---------------------------------------------------------------------------
 
-async function startMesh(env: Record<string, string>): Promise<Mesh> {
+async function startMesh(requirement: Scenario["mesh"]): Promise<Mesh> {
   const stateDir = mkdtempSync(join(tmpdir(), "mesh-e2e-"));
   const readyFile = join(stateDir, "ready.json");
+  // Asked for by flag rather than arranged through the environment. Setting
+  // `AGENT_MESH_RECEIVE_LEASE_SECONDS` behind the harness's back worked, but a
+  // requirement each runner satisfies its own way is no longer one requirement,
+  // and a harness that never saw the number cannot say it honoured it.
   const child = spawn(
     "bun",
-    ["run", "e2e:harness", "--", "--ready-file", readyFile, "--state-dir", join(stateDir, "state")],
-    { cwd: PLATFORM, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] },
+    [
+      "run",
+      "e2e:harness",
+      "--",
+      "--ready-file",
+      readyFile,
+      "--state-dir",
+      join(stateDir, "state"),
+      ...(requirement?.receiveLeaseSeconds !== undefined
+        ? ["--receive-lease-seconds", String(requirement.receiveLeaseSeconds)]
+        : []),
+    ],
+    { cwd: PLATFORM, stdio: ["ignore", "pipe", "pipe"] },
   );
   let harnessOutput = "";
   child.stdout?.on("data", (chunk) => (harnessOutput += chunk));
@@ -133,7 +160,21 @@ async function startMesh(env: Record<string, string>): Promise<Mesh> {
   }
   const ready = JSON.parse(readFileSync(readyFile, "utf8"));
   const handle = ready.admin_test_handle;
+  const platform = ready.platform ?? {};
+  // Verified against what the mesh says it applied, not against what was asked.
+  // A flag the harness silently ignored would leave E2E-RECEIVE-002 passing
+  // without ever reaching the lapse it exists to show.
+  const applied = ready.mesh_config?.receive_lease_seconds ?? null;
+  if (requirement?.receiveLeaseSeconds !== undefined && applied !== requirement.receiveLeaseSeconds) {
+    child.kill("SIGTERM");
+    throw new Error(
+      `harness applied receive_lease_seconds=${applied}, scenario requires ${requirement.receiveLeaseSeconds}`,
+    );
+  }
   return {
+    provenance: `${platform.branch ?? "?"} ${platform.commit ?? "unknown"}${
+      platform.dirty === "true" || platform.dirty === true ? " (dirty)" : ""
+    }`,
     apiHttp: ready.api_http,
     rpcWs: ready.rpc_ws,
     baseUrl: ready.base_url,
@@ -307,11 +348,32 @@ function short(value: unknown): string {
   return JSON.stringify(value).slice(0, 240);
 }
 
-function assertHttp(expect: { status: number; code?: string } | undefined, got: HttpOutcome): void {
+/** Reads a dotted path, distinguishing "absent" from a stored `undefined`. */
+function atPath(body: unknown, path: string): { found: boolean; value: unknown } {
+  let cursor: any = body;
+  for (const segment of path.split(".")) {
+    if (cursor === null || typeof cursor !== "object" || !(segment in cursor)) {
+      return { found: false, value: undefined };
+    }
+    cursor = cursor[segment];
+  }
+  return { found: true, value: cursor };
+}
+
+function assertHttp(expect: ExpectHttp | undefined, got: HttpOutcome): void {
   if (!expect) return;
   if (got.status !== expect.status) fail(`expected HTTP ${expect.status}, got ${got.status}: ${short(got.body)}`);
   if (expect.code !== undefined && got.body?.code !== expect.code) {
     fail(`expected body code ${expect.code}, got ${short(got.body)}`);
+  }
+  for (const [path, wanted] of Object.entries(expect.body ?? {})) {
+    const { found, value } = atPath(got.body, path);
+    // Absent is reported as absent rather than as a mismatch against
+    // `undefined`: a renamed field and a wrong value are different defects.
+    if (!found) fail(`expected ${path} = ${JSON.stringify(wanted)}, but the body has no ${path}: ${short(got.body)}`);
+    if (value !== wanted) {
+      fail(`expected ${path} = ${JSON.stringify(wanted)}, got ${JSON.stringify(value)}`);
+    }
   }
 }
 
@@ -501,17 +563,6 @@ async function runScenario(mesh: Mesh, registry: Registry, scenario: Scenario): 
   };
 }
 
-/** The environment a scenario's `mesh` requirement asks for. */
-function meshEnv(scenario: Scenario): Record<string, string> {
-  const requirement = scenario.mesh;
-  if (!requirement) return {};
-  const env: Record<string, string> = {};
-  if (requirement.receiveLeaseSeconds !== undefined) {
-    env.AGENT_MESH_RECEIVE_LEASE_SECONDS = String(requirement.receiveLeaseSeconds);
-  }
-  return env;
-}
-
 /**
  * `--proposals` adds this repository's candidate scenarios to the run.
  *
@@ -530,13 +581,15 @@ if (selected.length === 0) {
 }
 
 const results: ScenarioResult[] = [];
+const provenances = new Set<string>();
 
 // The shared mesh, in order. One registry, because the scenarios reference each
 // other's identities on purpose.
 const shared = selected.filter((scenario) => !scenario.mesh);
 if (shared.length > 0) {
-  process.stdout.write(`[runner] starting a mesh for ${shared.length} shared scenario(s)\n`);
-  const mesh = await startMesh({});
+  const mesh = await startMesh(undefined);
+  provenances.add(mesh.provenance);
+  process.stdout.write(`[runner] mesh for ${shared.length} shared scenario(s) — platform ${mesh.provenance}\n`);
   const registry: Registry = new Map();
   try {
     for (const scenario of shared) results.push(await runScenario(mesh, registry, scenario));
@@ -546,10 +599,15 @@ if (shared.length > 0) {
 }
 
 // And one mesh each for the scenarios whose shape is part of their claim.
+// One *each*, even where two ask for the same shape: § 17.4 says a scenario
+// carrying `mesh` gets its own and must provision everything it names, so
+// sharing would let one of them pass on state the other left behind.
 for (const scenario of selected.filter((s) => s.mesh)) {
-  const env = meshEnv(scenario);
-  process.stdout.write(`[runner] starting a mesh for ${scenario.id} (${JSON.stringify(env)})\n`);
-  const mesh = await startMesh(env);
+  const mesh = await startMesh(scenario.mesh);
+  provenances.add(mesh.provenance);
+  process.stdout.write(
+    `[runner] mesh ${JSON.stringify(scenario.mesh)} for ${scenario.id} — platform ${mesh.provenance}\n`,
+  );
   try {
     results.push(await runScenario(mesh, new Map(), scenario));
   } finally {
@@ -567,6 +625,11 @@ for (const result of results) {
     process.stdout.write(`                  step ${step.step} ${step.verb}: ${step.outcome} — ${step.detail}\n`);
   }
 }
+
+// Printed with the totals, not only in the header. A result that cannot say
+// what answered is not a finding anybody can act on -- reporting one without
+// this cost both sides half an hour on a refusal that had shipped long before.
+process.stdout.write(`\nplatform: ${[...provenances].join(", ") || "unknown"}\n`);
 
 const shared_ = results.filter((r) => !proposed.has(r.id));
 const failedCount = shared_.filter((r) => r.outcome === "failed").length;
