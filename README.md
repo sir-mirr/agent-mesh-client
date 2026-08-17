@@ -33,7 +33,7 @@ Each lane holds its conversation open from start and continues the previous one 
 | | |
 |---|---|
 | Hub and normative `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
-| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), pinned at `v0.17.0` |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), pinned at `v0.18.0` |
 | This client | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---

@@ -18,7 +18,7 @@
  * The mesh-backed entries start a real hub through the platform harness and
  * take about half a minute each. They are in the default run because leaving
  * them out would make the fast path the one people quote, and the expensive
- * five are where the interesting failures were.
+ * ones are where the interesting failures were.
  */
 
 import { MutationRefused, runMutation, type Mutation } from "./mutate";
@@ -49,6 +49,14 @@ const typecheck = ["bun", "run", "check"];
 type Outcome = "caught" | "NOT CAUGHT" | "REFUSED";
 
 const MUTATIONS: Entry[] = [
+  {
+    defect:
+      "Both READMEs stated the contract pin three tags behind, were corrected by hand, and drifted again within the hour. Nothing else in the repository reads those lines.",
+    file: "package.json",
+    find: 'agent-mesh-contracts#v0.18.0"',
+    replace: 'agent-mesh-contracts#v0.19.0"',
+    command: ["bun", "test", "test/doc-pins.test.ts"],
+  },
   {
     defect:
       "`tsconfig.json` covered src and test only, so `bun run check` never opened e2e, scripts or .claude/hooks while reporting zero errors for changes made in them.",
@@ -120,6 +128,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "`null` in `expect.body` means absent or null -- how a scenario says a filter matched nothing, which is the only order-independent way to state it. Requiring the path to exist turns every such assertion into a failure against a correct route.",
+    file: RUNNER,
+    find: "    if (wanted === null) {",
+    replace: "    if (false) {",
+    command: scenario("E2E-AUDIT-001"),
+    slow: true,
+  },
+  {
+    defect:
       "A mesh requirement asked for but not honoured leaves E2E-RECEIVE-002 passing without ever reaching the lapse it exists to show.",
     file: RUNNER,
     find: "String(requirement.receiveLeaseSeconds)]",
@@ -132,10 +149,14 @@ const MUTATIONS: Entry[] = [
 /**
  * Two mutations that must **not** be caught, for `--self-check`.
  *
- * The failure branch of this file had never executed. A set of nine that all
- * pass never prints `NOT CAUGHT`, so the code saying a guard is missing was
- * itself a check nobody had seen work -- this file appearing inside the tool
- * written to find it.
+ * The failure branch of this file had never executed. A set that all passes
+ * never prints `NOT CAUGHT`, so the code saying a guard is missing was itself a
+ * check nobody had seen work -- this file appearing inside the tool written to
+ * find it.
+ *
+ * (Both sentences said "five" and "nine" until the set grew. A sentence that
+ * counts a list drifts beside it, which is the same defect as an ADR headed
+ * "four rules" over seven and a README pinning a tag three behind.)
  *
  * It was first confirmed by hand, which is the objection that put the set in
  * the repository in the first place: a proof living only in a transcript

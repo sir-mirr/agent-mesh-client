@@ -414,7 +414,16 @@ function assertHttp(expect: ExpectHttp | undefined, got: HttpOutcome): void {
   }
   for (const [path, wanted] of Object.entries(expect.body ?? {})) {
     const { found, value } = atPath(got.body, path);
-    // Absent is reported as absent rather than as a mismatch against
+    // `null` means absent or null -- how a scenario says a filter matched
+    // nothing. Requiring the path to exist here would fail every one of those,
+    // since a route that correctly returns no rows has no `events.0` to read.
+    if (wanted === null) {
+      if (found && value !== null) {
+        fail(`expected no ${path}, got ${JSON.stringify(value)}: ${short(got.body)}`);
+      }
+      continue;
+    }
+    // Otherwise absent is reported as absent rather than as a mismatch against
     // `undefined`: a renamed field and a wrong value are different defects.
     if (!found) fail(`expected ${path} = ${JSON.stringify(wanted)}, but the body has no ${path}: ${short(got.body)}`);
     if (value !== wanted) {

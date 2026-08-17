@@ -33,7 +33,7 @@ Channel 왕복은 Hub를 우회하므로 Hub 장애가 로컬 응답을 막지 �
 | | |
 |---|---|
 | Hub와 규범 `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
-| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), `v0.17.0` 고정 |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), `v0.18.0` 고정 |
 | 이 클라이언트 | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---
