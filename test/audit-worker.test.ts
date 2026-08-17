@@ -1,30 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { ERROR_CLASS, ERROR_DATA_CODE, MESH_ERROR, errorClass } from "@agent-mesh/contracts";
+import { ERROR_CLASS, ERROR_DATA_CODE, MESH_ERROR, errorClassOf } from "@agent-mesh/contracts";
 import { auditErrorCode, requestedDelay } from "../src/hub/audit-worker";
 import { HubRpcError } from "../src/hub/mesh-client";
 
 describe("audit retry classification", () => {
   test("dead-letters the Hub catch-all append failure", () => {
-    expect(errorClass(MESH_ERROR.SERVER_ERROR, "transient")).toBe("permanent");
+    expect(errorClassOf(MESH_ERROR.SERVER_ERROR)).toBe("permanent");
   });
 
   test("keeps explicit Hub load shedding retryable", () => {
-    expect(errorClass(MESH_ERROR.AUDIT_BUSY, "transient")).toBe("transient");
+    expect(errorClassOf(MESH_ERROR.AUDIT_BUSY)).toBe("transient");
   });
 
-  // v0.7.4 made the answer for an unlisted code an argument, because no single
-  // answer is right on every path. The audit worker passes "transient" and
-  // this asserts the choice, not the contract's opinion: a wrong retry here is
-  // capped by the backoff ceiling and drains later, while a wrong dead-letter
-  // waits for `outbox replay` and someone to run it.
-  test("retries codes this pin has never heard of, because a queue holds them", () => {
-    expect(errorClass(-32999, "transient")).toBe("transient");
+  // v0.11.0 gave unknown codes a rule, and it splits by band rather than by
+  // call site. Inside the mesh's range an unassigned code is a refusal this
+  // pin does not recognise, and retrying one forever is the failure that
+  // reports itself as healthy the whole time.
+  test("quarantines an unassigned code from the mesh's own range", () => {
+    expect(errorClassOf(-32019)).toBe("permanent");
   });
 
-  // The same call on a path with no outbox behind it. Kept next to the case
-  // above so the pair reads as a decision rather than an accident.
-  test("quarantines an unknown code where nothing would drain it later", () => {
-    expect(errorClass(-32999, "permanent")).toBe("permanent");
+  // Outside it, the code belongs to another vocabulary. Stranding a lane over
+  // a message it understood is the wrong half of the asymmetry.
+  test("retries a code from a vocabulary that is not the mesh's", () => {
+    expect(errorClassOf(-32999)).toBe("transient");
   });
 
   // Under the v0.7.0 pin, -32000 was classified only because this repository
@@ -43,7 +42,7 @@ describe("audit retry classification", () => {
     const classified = auditCodes.map((code) => ({
       code,
       inTable: Object.hasOwn(ERROR_CLASS, code),
-      class: errorClass(code, "transient"),
+      class: errorClassOf(code),
     }));
     expect(classified).toEqual([
       { code: MESH_ERROR.AUDIT_MISSING_BLOBS, inTable: true, class: "transient" },

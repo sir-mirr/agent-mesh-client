@@ -39,6 +39,7 @@
 | `UX-009` | MUST | tmux 세션 이름은 `mesh-lane-<identity>`여야 한다. 이름이 이미 점유돼 있으면 그 세션에 붙지 말고 오류를 보여야 한다. |
 | `UX-010` | MUST | attach의 runtime별 동작은 TUI와 CLI가 같아야 한다. |
 | `RUN-007` | SHOULD | runtime 세션이 종료된 lane에서 attach는 세션을 다시 세울 수 있어야 하며, 이전 대화 이어가기와 새로 시작하기를 키보드로 고르게 해야 한다. |
+| `AUD-005` | MUST | 분류되지 않은 Hub 에러코드는 계약의 `errorClassOf`로 판정해야 한다. 호출 지점이 임의로 재시도 쪽 기본값을 고르면 안 된다 — 아무도 풀 수 없는 거부를 무한 재시도하는 동안 모든 구성요소가 정상으로 보고한다. |
 | `RUN-009` | MUST | 상주 프로세스가 없는 runtime의 상태는 turn 상태에서 파생해야 한다. turn을 처리 중인 lane과 할 일이 없는 lane이 같은 상태로 표시되면 안 된다. |
 | `RUN-008` | MUST | 사람 입력을 기다리는 runtime은 `awaiting-input`으로 구분되고 화면의 질문을 함께 보고해야 한다. 진행 중인 turn과 같은 상태로 표시하면 안 된다. |
 | `OBS-004` | SHOULD | 상주 프로세스가 없는 runtime이라도 대화가 남으면 attach는 그 대화를 열어야 한다. |

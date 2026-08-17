@@ -33,7 +33,7 @@ Channel 왕복은 Hub를 우회하므로 Hub 장애가 로컬 응답을 막지 �
 | | |
 |---|---|
 | Hub와 규범 `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
-| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), `v0.10.2` 고정 |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), `v0.11.0` 고정 |
 | 이 클라이언트 | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---
@@ -182,7 +182,7 @@ if (ERROR_CLASS[err.code] === "permanent") deadLetter(event)        // 뭘 할�
 if (errorDataCode(err) === ERROR_DATA_CODE.AUDIT_APPEND_FAILED) ... // 뭐가 일어났는지
 ```
 
-분류되지 않은 코드에는 어디서나 맞는 답이 없으므로 호출 지점이 정합니다 — 나중에 비울 outbox가 있는 곳은 `errorClass(code, "transient")`, 비울 것이 없는 곳은 `"permanent"`.
+할당되지 않은 코드는 `errorClassOf(code)`가 대역으로 가릅니다 — mesh 자기 대역 안이면 이 클라이언트가 모르는 거부라 격리하고, 밖이면 다른 어휘라 재시도합니다. 거부를 영원히 재시도하는 쪽이 **그 내내 정상으로 보고되는** 실패입니다.
 
 ### 이 저장소에서 작업할 때
 

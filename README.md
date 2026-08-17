@@ -33,7 +33,7 @@ Each lane holds its conversation open from start and continues the previous one 
 | | |
 |---|---|
 | Hub and normative `SPEC.md` | [`sir-mirr/agent-mesh-platform`](https://github.com/sir-mirr/agent-mesh-platform) |
-| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), pinned at `v0.10.2` |
+| Wire contract | [`sir-mirr/agent-mesh-contracts`](https://github.com/sir-mirr/agent-mesh-contracts), pinned at `v0.11.0` |
 | This client | [`sir-mirr/agent-mesh-client`](https://github.com/sir-mirr/agent-mesh-client) |
 
 ---
@@ -182,7 +182,7 @@ if (ERROR_CLASS[err.code] === "permanent") deadLetter(event)        // what to d
 if (errorDataCode(err) === ERROR_DATA_CODE.AUDIT_APPEND_FAILED) ... // what happened
 ```
 
-An unclassified code has no single right answer, so the call site states one: `errorClass(code, "transient")` where an outbox will drain it later, `"permanent"` where nothing would.
+An unassigned code is answered by `errorClassOf(code)`, which splits by band: inside the mesh's own range it is a refusal this client does not recognise and is quarantined, outside it belongs to another vocabulary and is retried. Retrying a refusal forever is the failure that reports itself as healthy throughout.
 
 ### Working on this repository
 

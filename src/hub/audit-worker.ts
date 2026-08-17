@@ -2,7 +2,7 @@ import {
   AUDIT_SCHEMA_VERSION,
   MESH_ERROR,
   deriveBlobKey,
-  errorClass,
+  errorClassOf,
   errorDataCode,
   type AuditAttachmentRef,
   type PrepareBlobsResult,
@@ -164,13 +164,18 @@ export class AuditWorker {
     } catch (error) {
       const rpcError = error instanceof HubRpcError ? error : null;
       const httpError = error instanceof AuditHttpError ? error : null;
-      // `"transient"` for an unrecognised code, stated here rather than left to
-      // the table: this path has an outbox behind it. A wrong retry is capped
-      // by the backoff ceiling and visible as a rising attempt count, while a
-      // wrong dead-letter needs an operator to undo. Paths with nothing to
-      // drain later — connect, send — must pass `"permanent"` instead.
+      // `errorClassOf`, not a fallback chosen here. This used to pass
+      // `"transient"`, argued from the cost of being wrong: a needless retry is
+      // capped by the backoff ceiling, a needless dead-letter needs a person.
+      // Two things moved since. `outbox replay` exists, so the dead-letter side
+      // is recoverable; and v0.11.0 splits unknown codes by band -- one inside
+      // the mesh's range is a refusal this client does not understand, where
+      // retrying forever is the failure that reports itself as healthy, while
+      // one outside belongs to another vocabulary and must not strand a lane
+      // over a message it did understand. That distinction is not this call
+      // site's to make.
       const classification = rpcError
-        ? errorClass(rpcError.code, "transient")
+        ? errorClassOf(rpcError.code)
         : httpError?.permanent
           ? "permanent"
           : "transient";
