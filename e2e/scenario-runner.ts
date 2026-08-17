@@ -790,5 +790,14 @@ for (const result of results) {
 process.stdout.write(`\nplatform: ${[...provenances].join(", ") || "unknown"}\n`);
 
 const failedCount = results.filter((r) => r.outcome === "failed").length;
-process.stdout.write(`\n${results.length - failedCount}/${results.length} contract scenarios\n`);
+// The denominator is what ran, so a filtered run says so rather than letting
+// `1/1 contract scenarios` read as the whole set having passed. The count comes
+// from the contract, not from a number written here: the platform side reported
+// a scenario total twice from a `bun test` case count instead, and an agreement
+// to be careful did not stop the second one.
+process.stdout.write(
+  `\n${results.length - failedCount}/${results.length} contract scenarios` +
+    (only ? ` — filtered to ${only}, of ${E2E_SCENARIOS.length} in the contract` : "") +
+    "\n",
+);
 process.exit(failedCount === 0 ? 0 : 1);
