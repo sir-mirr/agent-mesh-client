@@ -209,6 +209,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The harness is spawned from the platform checkout, so a run against a dirty tree measures code in no commit. A run reported 10/18 with SIGNATURE_INVALID everywhere, minutes after 18/18 on the same commit, because the other side was mid-mutation in that tree. Reporting it as a contract mismatch would have sent someone after a defect that exists nowhere.",
+    file: "e2e/dirty-tree.ts",
+    find: 'const isDirty = dirty === true || dirty === "true";',
+    replace: "const isDirty = dirty === true;",
+    command: ["bun", "test", "test/dirty-tree.test.ts"],
+    evidence: "scenario runs refuse a dirty platform checkout",
+  },
+  {
+    defect:
       "A mesh requirement asked for but not honoured leaves E2E-RECEIVE-002 passing without ever reaching the lapse it exists to show.",
     file: RUNNER,
     find: "String(requirement.receiveLeaseSeconds)]",

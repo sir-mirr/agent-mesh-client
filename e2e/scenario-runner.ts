@@ -56,6 +56,7 @@ import {
   type Scenario,
   type Step,
 } from "@agent-mesh/contracts";
+import { refusesDirtyTree } from "./dirty-tree";
 
 /**
  * The platform checkout whose harness this run drives.
@@ -188,10 +189,32 @@ async function startMesh(requirement: Scenario["mesh"]): Promise<Mesh> {
       `harness applied receive_lease_seconds=${applied}, scenario requires ${requirement.receiveLeaseSeconds}`,
     );
   }
+  // A dirty platform tree is not a measurement.
+  //
+  // The harness is spawned from the platform checkout, so its hub is whatever
+  // that working tree says right now — including a guard the other side has
+  // deliberately removed while running its own mutation set. That happened: a
+  // run reported 10/18 with `SIGNATURE_INVALID` everywhere, minutes after
+  // 18/18 on the same commit, because the tree was mid-mutation. Reporting
+  // that as a contract mismatch would have sent someone after a defect that
+  // does not exist in any commit.
+  //
+  // Refusing rather than warning, for the reason `runMutation` refuses a dirty
+  // tree: a result nobody can reproduce is worse than no result. Ports, state
+  // directories and ready files are isolated per harness; the source tree is
+  // the one thing two agents share, and an earlier answer of mine said there
+  // was no conflict after checking only the first three.
+  const dirty = platform.dirty === true || platform.dirty === "true";
+  if (refusesDirtyTree({ dirty: platform.dirty, override: process.env.AGENT_MESH_E2E_ALLOW_DIRTY })) {
+    child.kill("SIGTERM");
+    throw new Error(
+      `the platform checkout at ${PLATFORM} has uncommitted changes, so this run would measure ` +
+        `a tree that exists in no commit. Wait for it to settle, or set AGENT_MESH_E2E_ALLOW_DIRTY=1 ` +
+        `to run anyway and treat the result as unreproducible.`,
+    );
+  }
   return {
-    provenance: `${platform.branch ?? "?"} ${platform.commit ?? "unknown"}${
-      platform.dirty === "true" || platform.dirty === true ? " (dirty)" : ""
-    }`,
+    provenance: `${platform.branch ?? "?"} ${platform.commit ?? "unknown"}${dirty ? " (dirty)" : ""}`,
     apiHttp: ready.api_http,
     rpcWs: ready.rpc_ws,
     baseUrl: ready.base_url,
