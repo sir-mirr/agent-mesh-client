@@ -5,6 +5,11 @@ on:
     branches:
       - main
   pull_request:
+  # Re-runnable without a commit. A run failed on a transient GitHub download
+  # error, and re-running it needed an endpoint that was itself returning 503 —
+  # so the only way to ask "does it pass now" was to push something. A green
+  # nobody can re-request is a green nobody can re-check.
+  workflow_dispatch:
 
 permissions:
   contents: read
