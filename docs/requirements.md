@@ -61,7 +61,7 @@
 | `UX-005` | MUST | TUI는 존재하는 Agent/Channel만 선택하게 하고 대상이 없으면 enable/disable/remove 같은 적용 불가능한 action을 숨겨야 한다. |
 | `DIST-001` | MUST | 최종 사용자는 Bun/Node/npm 없이 standalone binary를 설치할 수 있어야 한다. |
 | `CON-001` | MUST | Hub contract를 immutable public Git tag로 고정해야 한다. |
-| `CON-002` | MUST | 계약의 `E2E_SCENARIOS`를 그대로 재생할 수 있어야 한다. 러너는 자체 expectation을 두면 안 되고, 시나리오가 요구하지 않은 필드를 요청에 넣어서도 안 된다 — 그 순간 이쪽의 green과 저쪽의 green이 다른 뜻이 된다. 수행할 수 없는 verb는 verb 단위로 건너뛰고 보고해야 하며, 시나리오 전체를 건너뛰면 안 된다. |
+| `CON-002` | MUST | 계약의 `E2E_SCENARIOS`를 그대로 재생할 수 있어야 한다. 러너는 자체 expectation을 두면 안 되고, 시나리오가 요구하지 않은 필드를 요청에 넣어서도 안 된다 — 그 순간 이쪽의 green과 저쪽의 green이 다른 뜻이 된다. 건너뛰는 step은 없어야 한다 — 수행할 수 없는 verb는 실패다. 한쪽만 돌릴 수 있는 verb는 한쪽만 붙잡는 clause이고, 그 공백은 러너가 표면을 우회해서가 아니라 메시 표면에서 메워져야 한다. |
 | `CON-003` | MUST | 시나리오 재생은 clean mesh에서 순서대로 이뤄져야 하고, `mesh` 요구가 있는 시나리오는 그 조건의 mesh를 따로 세워야 한다. 시나리오끼리 identity를 공유하므로 개별 실행을 전제하면 안 되고, 기본 조건으로 대신 돌리면 정상 동작에서 실패한다. |
 | `CON-004` | MUST | 재생 결과의 불일치는 계약 결함으로 플랫폼에 보고해야 한다. 클라이언트가 기대값을 맞추거나 플랫폼 코드를 고쳐서 통과시키면 안 된다. |
 | `CON-005` | MUST | 재생 결과는 무엇에 대고 돌렸는지(플랫폼 worktree·commit·branch·dirty)를 함께 보고해야 한다. 출처를 말할 수 없는 결과로 불일치를 제기하면 안 된다 — 40커밋 뒤진 feature worktree를 상대로 이미 고쳐진 결함을 확신 있게 보고한 적이 있다. |

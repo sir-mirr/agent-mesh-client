@@ -41,7 +41,8 @@
 | `AT-033` | `UX-006`, `UX-007` | 비활성 lane이 Hub·Key를 미설정/불명으로 표시하지 않고, enable·disable·remove가 진행 표시와 함께 끝난다. |
 | `AT-034` | `UX-008`, `SEC-003` | lane 제거 확인 화면이 identity 잔존과 재추가 조건을 알리고, 같은 키를 가진 호스트에서 재추가가 승인 없이 복구된다. |
 | `AT-042` | `AUD-005` | mesh 대역 안의 미할당 코드는 dead-letter로, 대역 밖 코드는 재시도로 처리한다. |
-| `AT-043` | `CON-002` | `E2E_SCENARIOS` 전체가 재생되고, `expectStored`는 verb 단위 skip으로 보고된다. 러너가 구현하지 않은 verb는 통과가 아니라 실패로 보고된다. |
+| `AT-043` | `CON-002` | `E2E_SCENARIOS` 전체가 skip 없이 재생된다. 러너가 구현하지 않은 verb는 통과가 아니라 실패로 보고된다. |
+| `AT-051` | `CON-002` | 운영자 라우트의 질의 문자열이 전달된다. 필터를 지우면 `E2E-SOURCE-001`·`E2E-AUDIT-001`·`E2E-TYPE-001`이 다른 행을 집어 실패한다. |
 | `AT-044` | `CON-003` | `receiveLeaseSeconds`를 요구하는 시나리오는 그 lease의 별도 mesh에서 돌아 lease 만료 후 재전달과 ack 이후 소멸을 모두 보인다. |
 | `AT-045` | `CON-004` | 불일치가 나온 시나리오는 실패로 남고, 통과시키기 위한 요청 변형이 러너에 들어가지 않는다. |
 | `AT-046` | `CON-005` | 재생 리포트는 mesh마다, 그리고 합계와 함께 플랫폼 commit·branch를 출력한다. |

@@ -14,9 +14,11 @@
  * `create_only: true` on every provision, which turned E2E-TYPE-001's expected
  * `200` into a `409` the scenario never described.
  *
- * A verb this client cannot perform is skipped **by verb** and named in the
- * report (SPEC § 17.3). Skipping a whole scenario would report untested
- * behaviour as green; skipping a verb records exactly what was not exercised.
+ * Nothing is skipped. § 17.3 used to allow a verb only one side could run, and
+ * that permission was the hole: three clauses were held by one implementation
+ * while both reports read green. A verb this runner cannot perform is a
+ * failure, and the gap belongs in the mesh's surfaces rather than in a runner
+ * reaching past them.
  *
  * ## Why it brings its own mesh
  *
@@ -62,8 +64,18 @@ const PLATFORM =
   process.env.AGENT_MESH_E2E_PLATFORM ??
   join(import.meta.dir, "..", "..", "agent-mesh-platform-main");
 
-/** Verbs whose evidence lives in the platform's own store (§ 17.3). */
-const UNRUNNABLE = new Set(["expectStored"]);
+/**
+ * There is no skip list, and § 17.3 no longer permits one.
+ *
+ * Three clauses used to sit behind `expectStored`, a verb only the platform
+ * could run against its own store. Skipping it was legal, and being legal is
+ * what hid the hole: observed source, audit-read tracing and the type-change
+ * event were each held by one implementation while both reports read green.
+ * They are now asked through the operator's own routes, which is the better
+ * question anyway -- a trace nobody can query does not serve the operator it
+ * exists for. A verb this runner cannot perform is now a failure, and the fix
+ * belongs in the mesh's surfaces rather than in a runner reaching past them.
+ */
 
 interface Mesh {
   /** Hub: provisioning and the signed inbox/outbox surface. */
@@ -91,14 +103,14 @@ interface Identity {
 interface StepResult {
   step: number;
   verb: string;
-  outcome: "passed" | "failed" | "skipped";
+  outcome: "passed" | "failed";
   detail?: string;
 }
 
 interface ScenarioResult {
   id: string;
   clause: string;
-  outcome: "passed" | "failed" | "skipped-steps";
+  outcome: "passed" | "failed";
   steps: StepResult[];
 }
 
@@ -596,19 +608,8 @@ async function runScenario(
   const leases = new Map<string, string[]>();
   const steps: StepResult[] = [];
   let failed = false;
-  let skipped = false;
 
   for (const [index, step] of scenario.steps.entries()) {
-    if (UNRUNNABLE.has(step.do)) {
-      steps.push({
-        step: index + 1,
-        verb: step.do,
-        outcome: "skipped",
-        detail: "evidence lives in the platform store; not reachable from this client",
-      });
-      skipped = true;
-      continue;
-    }
     if (failed) break;
     try {
       await runStep(mesh, registry, leases, bindings, step as Step & Record<string, any>);
@@ -627,7 +628,7 @@ async function runScenario(
   return {
     id: scenario.id,
     clause: scenario.clause,
-    outcome: failed ? "failed" : skipped ? "skipped-steps" : "passed",
+    outcome: failed ? "failed" : "passed",
     steps,
   };
 }
@@ -686,7 +687,7 @@ for (const scenario of selected.filter((s) => s.mesh)) {
 
 process.stdout.write("\n");
 for (const result of results) {
-  const mark = result.outcome === "passed" ? "ok" : result.outcome === "failed" ? "FAIL" : "partial";
+  const mark = result.outcome === "passed" ? "ok" : "FAIL";
   process.stdout.write(`${mark.padEnd(8)} ${result.id.padEnd(18)} ${result.clause}\n`);
   for (const step of result.steps) {
     if (step.outcome === "passed") continue;
@@ -700,8 +701,5 @@ for (const result of results) {
 process.stdout.write(`\nplatform: ${[...provenances].join(", ") || "unknown"}\n`);
 
 const failedCount = results.filter((r) => r.outcome === "failed").length;
-const skippedSteps = results.flatMap((r) => r.steps).filter((s) => s.outcome === "skipped").length;
-process.stdout.write(
-  `\n${results.length - failedCount}/${results.length} contract scenarios, ${skippedSteps} step(s) skipped\n`,
-);
+process.stdout.write(`\n${results.length - failedCount}/${results.length} contract scenarios\n`);
 process.exit(failedCount === 0 ? 0 : 1);
