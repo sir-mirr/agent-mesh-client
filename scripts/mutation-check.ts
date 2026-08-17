@@ -46,6 +46,8 @@ const scenario = (id: string) => ["bun", RUNNER, id];
 const scopeTest = ["bun", "test", SCOPE];
 const typecheck = ["bun", "run", "check"];
 
+type Outcome = "caught" | "NOT CAUGHT" | "REFUSED";
+
 const MUTATIONS: Entry[] = [
   {
     defect:
@@ -143,10 +145,17 @@ const MUTATIONS: Entry[] = [
  * more dangerous: a rename leaves the pattern unmatched, the command runs
  * against untouched source and passes, and that reads as the guard failing to
  * catch a real defect — a wrong finding rather than a missing one.
+ *
+ * **Each declares how it must fail, not merely that it must.** Counting
+ * failures passes when both entries refuse — which is what a rename to the
+ * first entry's anchor would produce — and then the reporting branch under test
+ * has still never run while the count says 2/2. The platform side found that in
+ * theirs by letting the baseline drift a single character.
  */
-const SELF_CHECK: Entry[] = [
+const SELF_CHECK: (Entry & { mustFailAs: Outcome })[] = [
   {
     defect: "TEMPORARY: an edit inside a comment, which no guard could object to.",
+    mustFailAs: "NOT CAUGHT",
     file: SCOPE,
     find: "Every TypeScript file in this repository is inside the checked scope.",
     replace: "Every TypeScript file in this repository is within the checked scope.",
@@ -154,14 +163,13 @@ const SELF_CHECK: Entry[] = [
   },
   {
     defect: "TEMPORARY: a pattern that is no longer present, as a rename would leave it.",
+    mustFailAs: "REFUSED",
     file: SCOPE,
     find: "a-string-this-file-does-not-contain",
     replace: "irrelevant",
     command: scopeTest,
   },
 ];
-
-type Outcome = "caught" | "NOT CAUGHT" | "REFUSED";
 
 async function evaluate(entry: Entry): Promise<{ outcome: Outcome; detail: string }> {
   try {
@@ -183,17 +191,19 @@ if (process.argv.includes("--self-check")) {
   let wrong = 0;
   for (const entry of SELF_CHECK) {
     const { outcome, detail } = await evaluate(entry);
-    if (outcome === "caught") {
-      wrong += 1;
-      process.stdout.write(`reported as caught, but nothing should have caught it: ${entry.defect}\n`);
-    } else {
+    if (outcome === entry.mustFailAs) {
       process.stdout.write(`${outcome.padEnd(11)} ${detail.split("\n")[0]}\n`);
+      continue;
     }
+    wrong += 1;
+    process.stdout.write(
+      `expected to fail as "${entry.mustFailAs}", got "${outcome}": ${entry.defect}\n`,
+    );
   }
   process.stdout.write(
     wrong === 0
-      ? `\nself-check: ${SELF_CHECK.length}/${SELF_CHECK.length} correctly reported as failures\n`
-      : `\nself-check FAILED: ${wrong} reported as caught — the failure branch is not working\n`,
+      ? `\nself-check: ${SELF_CHECK.length}/${SELF_CHECK.length} failed the way they must\n`
+      : `\nself-check FAILED: ${wrong} did not fail the way it must — the reporting branch is untested\n`,
   );
   // One layer, and then a stop. A self-check of the self-check has no end, and
   // the place to stop was chosen by going one layer further and watching it
