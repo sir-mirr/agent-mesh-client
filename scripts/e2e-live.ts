@@ -128,7 +128,7 @@ const daemonOptions = {
   stateDirectory,
   runtimeDirectory,
   secretDirectory,
-  onDiagnostic: (message, error) =>
+  onDiagnostic: (message: string, error?: unknown) =>
     process.stderr.write(
       `[e2e] ${message}${error instanceof Error ? `: ${error.message}` : ""}\n`,
     ),

@@ -32,6 +32,11 @@
  * inbox and consume the read flags its owner depends on.
  */
 
+// A module, so that top-level `await` below is legal rather than merely
+// tolerated. Bun runs this either way; `tsc` does not, and this file sat
+// outside the checked scope long enough for that to go unnoticed.
+export {};
+
 const MAILBOX = process.env.AGENT_MESH_MAILBOX_URL ?? "http://localhost:3300/api/mail";
 const AGENT_ID = process.env.AGENT_MESH_AGENT_ID ?? "client-claude";
 const INTERVAL_MS = Number(process.env.AGENT_MESH_MAILBOX_POLL_SECONDS ?? 30) * 1000;
