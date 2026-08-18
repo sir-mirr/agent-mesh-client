@@ -115,3 +115,33 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/SHA256SUMS
+
+  # What the release page actually serves, downloaded and executed.
+  #
+  # Every check above runs inside the job that produced the binary, on the file
+  # it just built. That is not the same object a user gets: it still has to be
+  # tarred, uploaded, merged across four jobs, and attached to a release. v0.1.1
+  # was green through all of it and shipped a binary answering `0.1.0-dev.0`.
+  #
+  # So this pulls the published asset back down and asks it. A workflow that is
+  # green while the artifact is wrong is the failure this release exists to fix,
+  # and it cannot be caught by anything that never downloads.
+  verify-published:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'agent-mesh-linux-x64.tar.gz' --pattern 'SHA256SUMS' --dir published
+          cd published
+          # The installer verifies against this file, so a wrong sum ships a
+          # download nobody can install rather than one that misreports itself.
+          grep 'agent-mesh-linux-x64.tar.gz' SHA256SUMS | sha256sum -c -
+          tar -xzf agent-mesh-linux-x64.tar.gz
+          got="$(./agent-mesh --version)"
+          want="${GITHUB_REF_NAME#v}"
+          echo "published asset --version = $got   tag = $GITHUB_REF_NAME"
+          test "$got" = "$want"

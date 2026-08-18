@@ -49,4 +49,15 @@ describe("release version injection", () => {
     expect(steps.some((line) => /^\s*-?\s*run:.*scripts\/set-version\.ts/.test(line))).toBe(true);
     expect(steps.join("\n")).not.toContain("manifest.version =");
   });
+  // The checks inside the build job run on the file that job just built. The
+  // object a user gets is tarred, uploaded, merged across four jobs and attached
+  // to a release -- v0.1.1 was green through all of that and shipped a binary
+  // answering `0.1.0-dev.0`. Only something that downloads can catch it.
+  test("the release downloads the published asset and asks it its version", async () => {
+    const workflow = await Bun.file(".github/workflows/release.yml").text();
+    const steps = workflow.split("\n").filter((line) => !line.trim().startsWith("#")).join("\n");
+    expect(steps).toContain("gh release download");
+    expect(steps).toContain("needs: publish");
+    expect(steps).toMatch(/\$\(\.\/agent-mesh --version\)/);
+  });
 });
