@@ -110,6 +110,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "With nothing selected this program printed `0/0 caught` and exited 0 — measured, not assumed. A green saying nothing ran, from the tool whose job is to say whether the checks check anything. The same shape appeared in three repositories the same night: `0 pass` cannot tell 'did not run' from 'all failed'.",
+    file: "scripts/mutation-check.ts",
+    find: "if (selected.length === 0) {",
+    replace: "if (selected.length === -1) {",
+    command: ["bun", "test", "test/empty-selection.test.ts"],
+    evidence: "empty selection > a selection matching nothing is refused, not reported as a pass",
+  },
+  {
+    defect:
       "The injection is only reached because the workflow calls it. A workflow that stopped calling it would leave every test about the injection passing while releases went back to shipping whatever the manifest said — which is exactly how v0.1.1 shipped.",
     file: ".github/workflows/release.yml",
     find: "- run: bun run scripts/set-version.ts",
@@ -386,9 +395,36 @@ if (process.argv.includes("--collect")) {
 }
 
 const fast = process.argv.includes("--fast");
-const selected = fast ? MUTATIONS.filter((entry) => !entry.slow) : MUTATIONS;
+// A substring of the file or the evidence, so one mutation can be re-run on its
+// own. It also gives a test a way to drive this program to an empty selection,
+// which is the state the guard below exists for.
+const onlyFlag = process.argv.indexOf("--only");
+const only = onlyFlag === -1 ? undefined : process.argv[onlyFlag + 1];
+let selected = fast ? MUTATIONS.filter((entry) => !entry.slow) : MUTATIONS;
+if (only !== undefined) {
+  selected = selected.filter((entry) => entry.file.includes(only) || entry.evidence.includes(only));
+}
 if (fast) {
   process.stdout.write(`skipping ${MUTATIONS.length - selected.length} mesh-backed mutation(s)\n\n`);
+}
+// A zero denominator is not a pass. With nothing selected the loop below runs
+// zero times, `missed` stays zero, and this program prints `0/0 caught` and
+// exits 0 -- a green saying nothing ran, in the tool whose whole job is to say
+// whether the checks check anything. Measured before this line existed:
+// selection emptied, exit 0.
+if (selected.length === 0) {
+  process.stderr.write(
+    `no mutation selected${only === undefined ? "" : ` by ${JSON.stringify(only)}`}` +
+      ` — of ${MUTATIONS.length} in the set. Nothing ran, which is not the same as nothing wrong.\n`,
+  );
+  process.exit(2);
+}
+// Deliberately after the guard: `--list` answers "what would run", and on an
+// empty selection the answer is a refusal rather than an empty list.
+if (process.argv.includes("--list")) {
+  for (const entry of selected) process.stdout.write(`${entry.file} — ${entry.evidence}\n`);
+  process.stdout.write(`\n${selected.length}/${MUTATIONS.length} selected\n`);
+  process.exit(0);
 }
 
 let missed = 0;
