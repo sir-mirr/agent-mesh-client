@@ -137,20 +137,42 @@ jobs:
   # and it cannot be caught by anything that never downloads.
   verify-published:
     needs: publish
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            asset: linux-x64
+          - runner: ubuntu-24.04-arm
+            asset: linux-arm64
+          - runner: macos-14
+            asset: darwin-arm64
+          # `darwin-x64` is absent on purpose. It is cross-compiled and this
+          # project has no Intel runner -- `macos-13` never started, holding
+          # v0.1.0 queued for 53 minutes. Running it here through Rosetta would
+          # produce a green about this host, not about the machines that asset
+          # is for. Three of four assets are executed after publishing; the
+          # fourth is not, and the release notes say so.
+    runs-on: ${{ matrix.runner }}
     steps:
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET: ${{ matrix.asset }}
         run: |
           set -euo pipefail
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --pattern 'agent-mesh-linux-x64.tar.gz' --pattern 'SHA256SUMS' --dir published
+            --pattern "agent-mesh-$ASSET.tar.gz" --pattern 'SHA256SUMS' --dir published
           cd published
           # The installer verifies against this file, so a wrong sum ships a
           # download nobody can install rather than one that misreports itself.
-          grep 'agent-mesh-linux-x64.tar.gz' SHA256SUMS | sha256sum -c -
-          tar -xzf agent-mesh-linux-x64.tar.gz
+          # macOS has shasum, Linux has sha256sum; neither runner has both.
+          if command -v sha256sum >/dev/null 2>&1; then
+            grep "agent-mesh-$ASSET.tar.gz" SHA256SUMS | sha256sum -c -
+          else
+            grep "agent-mesh-$ASSET.tar.gz" SHA256SUMS | shasum -a 256 -c -
+          fi
+          tar -xzf "agent-mesh-$ASSET.tar.gz"
           got="$(./agent-mesh --version)"
           want="${GITHUB_REF_NAME#v}"
-          echo "published asset --version = $got   tag = $GITHUB_REF_NAME"
+          echo "published $ASSET --version = $got   tag = $GITHUB_REF_NAME"
           test "$got" = "$want"
