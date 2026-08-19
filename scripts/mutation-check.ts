@@ -155,6 +155,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The Hub consumes a nonce before it verifies the signature (SPEC 8.1), so a request that failed on its signature has still spent it. A client that retries with the same nonce fails again for a different reason under the same error code and cannot tell them apart — it retries forever. Nothing on either side measured this.",
+    file: "src/identity/key-manager.ts",
+    find: "    const nonce = prefixedId(\"nonce\");",
+    replace: "    const nonce = this.#stuckNonce ??= prefixedId(\"nonce\");",
+    command: ["bun", "test", "test/nonce-freshness.test.ts"],
+    evidence: "nonce freshness > signing the same request twice produces different nonces and signatures",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",
