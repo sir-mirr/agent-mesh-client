@@ -137,6 +137,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "install.sh is served off main by raw.githubusercontent, so an edit reaches every user with no tag and no build. Nothing in .github executed it -- its only mention there was the sentence in the release notes telling people to run it, and the first person to actually run it found it by hand.",
+    file: ".github/workflows/ci.yml",
+    find: "sh install.sh",
+    replace: "true",
+    command: ["bun", "test", "test/installer-coverage.test.ts"],
+    evidence: "installer coverage > ci runs the installer on every push",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",

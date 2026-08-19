@@ -176,3 +176,16 @@ jobs:
           want="${GITHUB_REF_NAME#v}"
           echo "published $ASSET --version = $got   tag = $GITHUB_REF_NAME"
           test "$got" = "$want"
+      # And the path a user actually takes to this release, taken. The job
+      # above proves the asset is right; this proves the thing that fetches it
+      # works against this tag.
+      - env:
+          AGENT_MESH_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          dir="$(mktemp -d)"
+          AGENT_MESH_INSTALL_DIR="$dir" AGENT_MESH_INSTALL_SERVICE=0 \
+            sh <(curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh")
+          got="$("$dir/agent-mesh" --version)"
+          echo "installer delivered $got for $AGENT_MESH_VERSION"
+          test "$got" = "${AGENT_MESH_VERSION#v}"

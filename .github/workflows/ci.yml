@@ -62,6 +62,21 @@ jobs:
       # A short runtime directory on purpose: a unix socket path has about a
       # hundred characters to work with, and the default runner temp path is
       # long enough to spend them.
+      # The installer, run. `install.sh` is served straight off `main` by
+      # raw.githubusercontent, so editing it deploys to every user immediately
+      # -- and until this step nothing executed it. The only mention of it
+      # anywhere in this directory was the sentence in the release notes telling
+      # people to run it. It was first exercised by someone trying it by hand.
+      #
+      # It installs the latest published release rather than the build above:
+      # what is under test is the installer, not the binary.
+      - name: install.sh installs and the result runs
+        run: |
+          set -euo pipefail
+          dir="$(mktemp -d)"
+          AGENT_MESH_INSTALL_DIR="$dir" AGENT_MESH_INSTALL_SERVICE=0 sh install.sh
+          test -x "$dir/agent-mesh"
+          "$dir/agent-mesh" --version
       - run: bun run compile
       - run: |
           mkdir -p /tmp/amci
