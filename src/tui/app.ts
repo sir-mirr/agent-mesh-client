@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline/promises";
+import { writeFileSync } from "node:fs";
 import { emitKeypressEvents } from "node:readline";
 import { resolve } from "node:path";
 import { ConfigStore } from "../config/store";
@@ -1251,19 +1252,46 @@ async function channelsScreen(
  */
 export function exitWhenInputEnds(): void {
   const stdin = process.stdin;
-  const leave = () => {
-    if (stdin.isTTY && typeof stdin.setRawMode === "function" && stdin.isRaw) {
-      stdin.setRawMode(false);
-    }
+  const leave = (event: string) => {
+    // Every step here talks to the terminal that just went away, and on Linux
+    // those calls throw: the first version wrote to stdout before exiting, the
+    // write failed with EIO, and the process stayed exactly where it was --
+    // spinning, with a guard installed. Leaving must not depend on the thing
+    // whose disappearance is the reason to leave.
+    const attempt = (action: () => void) => {
+      try {
+        action();
+      } catch {
+        // The terminal is gone. That is the case being handled.
+      }
+    };
+    attempt(() => {
+      if (stdin.isTTY && typeof stdin.setRawMode === "function" && stdin.isRaw) {
+        stdin.setRawMode(false);
+      }
+    });
     // Reset attributes and leave a newline, the same as the normal exit path --
     // the terminal is gone, but a pty can be reattached and a half-set SGR
     // outlives the process that set it.
-    process.stdout.write("\u001b[0m\n");
-    process.stderr.write("agent-mesh: terminal input ended; nothing left to read.\n");
+    attempt(() => process.stdout.write("\u001b[0m\n"));
+    attempt(() => {
+      process.stderr.write(`agent-mesh: terminal input ended (${event}); nothing left to read.\n`);
+    });
+    // Where a test can read it: the terminal this would otherwise report to is
+    // the one that just went away. Written synchronously, because process.exit
+    // does not wait for a promise.
+    const trace = process.env.AGENT_MESH_INPUT_TRACE;
+    if (trace) attempt(() => writeFileSync(trace, `${event}\n`));
     process.exit(2);
   };
-  stdin.on("end", leave);
-  stdin.on("close", leave);
+  // Three events, because the platforms disagree about which one a closed
+  // terminal produces. macOS ends the stream; Linux fails the read with EIO and
+  // surfaces it as `error`. A guard that listened for only one of them left the
+  // spin in place on the other -- measured, on a runner, after the macOS fix
+  // was already green.
+  stdin.on("end", () => leave("end"));
+  stdin.on("close", () => leave("close"));
+  stdin.on("error", () => leave("error"));
 }
 
 export async function runTui(options: TuiOptions): Promise<void> {
