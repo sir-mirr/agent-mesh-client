@@ -158,7 +158,7 @@ const MUTATIONS: Entry[] = [
       "The Hub consumes a nonce before it verifies the signature (SPEC 8.1), so a request that failed on its signature has still spent it. A client that retries with the same nonce fails again for a different reason under the same error code and cannot tell them apart — it retries forever. Nothing on either side measured this.",
     file: "src/identity/key-manager.ts",
     find: "    const nonce = prefixedId(\"nonce\");",
-    replace: "    const nonce = this.#stuckNonce ??= prefixedId(\"nonce\");",
+    replace: "    const nonce = \"nonce_replayed_every_time\";",
     command: ["bun", "test", "test/nonce-freshness.test.ts"],
     evidence: "nonce freshness > signing the same request twice produces different nonces and signatures",
   },
