@@ -146,6 +146,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The runner's handling of the first-login password gate ran against a platform build that no longer exists: the platform seeded the account as already-changed an hour after adding the gate. Written, asserted, and executed by nothing — which is the shape it was added to catch.",
+    file: "e2e/first-login-gate.ts",
+    find: "  if (!session?.must_change_password) return { gated: false };",
+    replace: "  if (session) return { gated: false };",
+    command: ["bun", "test", "test/first-login-gate.test.ts"],
+    evidence: "first login password gate > changes the password when the gate is set, with the credentials given",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",

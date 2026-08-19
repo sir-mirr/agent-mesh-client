@@ -57,6 +57,7 @@ import {
   type Step,
 } from "@agent-mesh/contracts";
 import { refusesDirtyTree } from "./dirty-tree";
+import { passFirstLoginGate } from "./first-login-gate";
 
 /**
  * The platform checkout whose harness this run drives.
@@ -454,43 +455,14 @@ async function adminCookie(mesh: Mesh): Promise<string> {
   const token = response.headers.get("set-cookie")?.match(/mesh_token=([^;]+)/)?.[1];
   if (!token) fail(`admin login did not return a session (HTTP ${response.status})`);
   const cookie = `mesh_token=${token}`;
-  await passFirstLoginGate(mesh, cookie);
+  const origin = new URL(mesh.loginUrl).origin;
+  const current = new URLSearchParams(mesh.loginBody).get("password") ?? "";
+  await passFirstLoginGate(origin, cookie, current, RUNNER_ADMIN_PASSWORD);
   adminSessions.set(mesh, cookie);
   return cookie;
 }
 
-/**
- * A first login that must change its password can do that and nothing else.
- *
- * Everything except three routes answers 403 until it does, and key approval is
- * outside those three -- so without this, fourteen of eighteen scenarios failed
- * on `approve` with a message about passwords. The product's own route is used
- * rather than the database underneath it: the runner knows the state directory,
- * but reaching into the platform's schema from here would make this file depend
- * on something no contract describes.
- *
- * Asked before it is done, so a mesh without the gate is left alone rather than
- * having its password changed by a test.
- */
-async function passFirstLoginGate(mesh: Mesh, cookie: string): Promise<void> {
-  const origin = new URL(mesh.loginUrl).origin;
-  const me = await fetch(`${origin}/auth/me`, {
-    headers: { cookie },
-    signal: AbortSignal.timeout(15_000),
-  });
-  const session = await me.json().catch(() => null);
-  if (!session?.must_change_password) return;
-  const current = new URLSearchParams(mesh.loginBody).get("password") ?? "";
-  const changed = await fetch(`${origin}/auth/local/password`, {
-    method: "POST",
-    headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ current, next: RUNNER_ADMIN_PASSWORD }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!changed.ok) {
-    fail(`admin password change returned HTTP ${changed.status}: ${short(await changed.text())}`);
-  }
-}
+
 
 // ---------------------------------------------------------------------------
 // Assertions, all of them the scenario's
