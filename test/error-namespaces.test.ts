@@ -36,6 +36,32 @@ describe("channel and mesh error namespaces", () => {
     expect(collisions).toEqual([]);
   });
 
+  /**
+   * All three tests above filter an enumeration and expect nothing left. An
+   * empty enumeration satisfies every one of them, and the suite would report
+   * that the boundary is held while comparing no codes at all.
+   *
+   * The shape was measured next door the same night: a sweep reported zero
+   * dropped fields across fourteen screens, and the number rose from 13 to 32
+   * adjudications once data existed. Same code, same tool, nothing to look at.
+   */
+  test("there are codes on both sides to compare", () => {
+    expect(Object.keys(CHANNEL_ERROR_CODES).length).toBeGreaterThan(0);
+    expect(meshCodes.size).toBeGreaterThan(0);
+    // And the two sets are the ones the tests above use, not empty stand-ins
+    // that happen to satisfy a length check.
+    expect(Object.values(CHANNEL_ERROR_CODES).every((code) => code < 0)).toBe(true);
+  });
+
+  // The matchers have to be able to say no, or the emptiness above is the only
+  // reason the tests pass.
+  test("and a code in the wrong half is detected", () => {
+    const trespasser = { BORROWED: [...meshCodes][0]! };
+    expect(Object.entries(trespasser).filter(([, code]) => meshCodes.has(code))).toHaveLength(1);
+    expect(isMeshErrorCode(-32014)).toBe(true);
+    expect(isMeshErrorCode(-32050)).toBe(false);
+  });
+
   // Reserved for us is not the same as ours by accident. A code below -32099
   // leaves the implementation-defined range altogether and collides with
   // JSON-RPC's own predefined errors.

@@ -191,6 +191,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "Three tests filtered the channel error codes and expected nothing left. An empty enumeration satisfies all three, and the suite would report the namespace boundary held while comparing no codes. Measured next door the same night: a sweep reported zero dropped fields across fourteen screens, and adjudications rose 13 to 32 once data existed — same code, same tool, nothing to look at.",
+    file: "src/constants.ts",
+    find: "  NOT_REGISTERED: -32050,",
+    replace: "  NOT_REGISTERED: -32014,",
+    command: ["bun", "test", "test/error-namespaces.test.ts"],
+    evidence: "channel and mesh error namespaces > shares no number with a live or retired mesh code",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",
