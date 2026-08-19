@@ -182,6 +182,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The summary divided by the number of scenarios that produced a result, while the work iterated the selected list. A scenario dropped between the plan and the tally would print `17/17 contract scenarios` — a complete pass of a set one short. A sweep on the platform side hit exactly this: its summary array was shadowed by a variable already in scope, so it read an empty array and reported zero of zero while the work had been done.",
+    file: "e2e/scenario-tally.ts",
+    find: "  if (planned === recorded) return null;",
+    replace: "  return null;",
+    command: ["bun", "test", "test/scenario-tally.test.ts"],
+    evidence: "scenario tally > a scenario that produced no result is refused, not divided away",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",

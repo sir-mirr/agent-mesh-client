@@ -58,6 +58,7 @@ import {
 } from "@agent-mesh/contracts";
 import { refusesDirtyTree } from "./dirty-tree";
 import { mayAlign, missingCheckoutMessage } from "./platform-checkout";
+import { tallyMismatch } from "./scenario-tally";
 import { passFirstLoginGate } from "./first-login-gate";
 
 /**
@@ -956,8 +957,13 @@ const failedCount = results.filter((r) => r.outcome === "failed").length;
 // a scenario total twice from a `bun test` case count instead, and an agreement
 // to be careful did not stop the second one.
 process.stdout.write(
-  `\n${results.length - failedCount}/${results.length} contract scenarios` +
+  `\n${results.length - failedCount}/${selected.length} contract scenarios` +
     (only ? ` — filtered to ${only}, of ${E2E_SCENARIOS.length} in the contract` : "") +
     "\n",
 );
+const mismatch = tallyMismatch(selected.length, results.length);
+if (mismatch) {
+  process.stderr.write(`${mismatch}\n`);
+  process.exit(2);
+}
 process.exit(failedCount === 0 ? 0 : 1);
