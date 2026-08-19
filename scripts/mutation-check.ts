@@ -119,6 +119,24 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "Three agent-mesh TUIs were found on a development machine at 82 hours of CPU time each, spawned by an editor that had exited and left the far end of the pty closed. Every screen parks on a promise only a keypress settles, so the process did not block -- it burned a core, for days, and the released binary still does.",
+    file: "src/tui/app.ts",
+    find: "  exitWhenInputEnds();",
+    replace: "",
+    command: ["bun", "test", "test/input-ends.test.ts"],
+    evidence: "terminal input ending > runTui installs it",
+  },
+  {
+    defect:
+      "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
+    file: "src/tui/app.ts",
+    find: "    process.exit(2);",
+    replace: "    return;",
+    command: ["bun", "test", "test/input-ends.test.ts"],
+    evidence: "terminal input ending > the TUI leaves when the terminal closes",
+  },
+  {
+    defect:
       "The injection is only reached because the workflow calls it. A workflow that stopped calling it would leave every test about the injection passing while releases went back to shipping whatever the manifest said — which is exactly how v0.1.1 shipped.",
     file: ".github/workflows/release.yml",
     find: "- run: bun run scripts/set-version.ts",

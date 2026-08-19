@@ -1229,10 +1229,44 @@ async function channelsScreen(
   }
 }
 
+/**
+ * The terminal went away while the TUI was waiting for a key.
+ *
+ * Every screen here parks on a promise that only a keypress settles, so when
+ * the other end of the pty closes there is nothing left to settle it -- and the
+ * process does not block, it spins. Measured: a TUI started on a pty whose
+ * master is then closed sits at 90-99% CPU indefinitely. Three of them were
+ * found on this machine at 82 hours of CPU time each, spawned by an editor that
+ * had long since exited.
+ *
+ * Listening is not enough. `end` does fire, and a handler that closes the
+ * readline interface, or does nothing, leaves the spin exactly where it was:
+ * 94.9% with no handler, 90.1% with an empty one, 99.2% closing the reader,
+ * 0% on exit. There is no interaction left to have, so leaving is the only
+ * answer that costs nothing.
+ */
+export function exitWhenInputEnds(): void {
+  const stdin = process.stdin;
+  const leave = () => {
+    if (stdin.isTTY && typeof stdin.setRawMode === "function" && stdin.isRaw) {
+      stdin.setRawMode(false);
+    }
+    // Reset attributes and leave a newline, the same as the normal exit path --
+    // the terminal is gone, but a pty can be reattached and a half-set SGR
+    // outlives the process that set it.
+    process.stdout.write("\u001b[0m\n");
+    process.stderr.write("agent-mesh: terminal input ended; nothing left to read.\n");
+    process.exit(2);
+  };
+  stdin.on("end", leave);
+  stdin.on("close", leave);
+}
+
 export async function runTui(options: TuiOptions): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error("TUI requires an interactive terminal");
   }
+  exitWhenInputEnds();
   const reader = createInterface({ input: process.stdin, output: process.stdout });
   try {
     await ensureOnboarding(reader, options);
