@@ -110,6 +110,13 @@ Every TUI action has a non-interactive equivalent. `--config`, `--state-dir` and
 | `agent-mesh attach` | opens the lane's session — the CLI, a viewer on it, or the queue | `agent-mesh attach writer` |
 | `agent-mesh runtime observe` | redacted queue view: states and sizes, never bodies | `agent-mesh runtime observe --lane writer` |
 
+> **The Discord channel driver has not been verified end to end.** The commands
+> above accept a bot token and the driver builds, starts and registers over the
+> local channel protocol, but no message has been carried between Discord and a
+> lane against real credentials — not by hand and not by any test here. Treat
+> the Discord path as unproven until that measurement exists; everything else in
+> this table is exercised by the suite or by the contract scenarios.
+
 ### Options, by command
 
 Only these commands take options. Everything else is positional.

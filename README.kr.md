@@ -108,7 +108,14 @@ TUI의 모든 동작에는 대응하는 비대화형 명령이 있습니다. `--
 | `agent-mesh outbox status` | pending·retry·dead-letter·acked 수 | `agent-mesh outbox status --lane writer` |
 | `agent-mesh outbox replay` | dead-letter를 큐로 되돌립니다 | `agent-mesh outbox replay --lane writer` |
 | `agent-mesh attach` | lane의 세션을 엽니다 — CLI, 그 위의 뷰어, 또는 큐 화면 | `agent-mesh attach writer` |
-| `agent-mesh runtime observe` | redacted 큐 화면. 상태와 글자 수만 | `agent-mesh runtime observe --lane writer` |
+| `agent-mesh runtime observe` | 편집된 큐 뷰: 상태와 크기, 본문은 절대 | `agent-mesh runtime observe --lane writer` |
+
+> **Discord channel driver는 아직 종단간 검증이 되지 않았습니다.** 위 명령들은
+> 봇 토큰을 받고, driver는 빌드되어 기동하며 로컬 channel 프로토콜로 등록까지
+> 합니다. 그러나 실제 자격증명으로 Discord와 lane 사이에 메시지가 오간 적은
+> 없습니다 — 손으로도, 여기 어떤 테스트로도. 그 측정이 생기기 전까지 Discord
+> 경로는 미검증으로 보십시오. 이 표의 나머지는 테스트 스위트나 contract
+> 시나리오가 실제로 돌립니다.
 
 ### 명령별 옵션
 
