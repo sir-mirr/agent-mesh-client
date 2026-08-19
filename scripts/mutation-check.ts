@@ -173,6 +173,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "A pipeline reports the last command's status, not the failing one. `gh run watch | tail` then `$?` reads tail, and tail succeeds at printing a failure — a red CI run was nearly reported as green here. GitHub's default shell is `bash -e` without pipefail, so a run block with a pipe can pass while the interesting half failed.",
+    file: ".github/workflows/release.yml",
+    find: "          set -euo pipefail\n          gh release download",
+    replace: "          gh release download",
+    command: ["bun", "test", "test/pipefail.test.ts"],
+    evidence: "pipefail > every run block with a pipeline sets pipefail",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",
