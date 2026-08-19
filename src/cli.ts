@@ -3,7 +3,7 @@ import packageManifest from "../package.json";
 import { basename, resolve } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { defaultLocations } from "./config/locations";
-import { appServerSocketPath, laneSocketPath, laneStorageName } from "./config/paths";
+import { appServerSocketPath, laneSocketPath, laneStorageName, laneTmuxSession } from "./config/paths";
 import { ConfigStore } from "./config/store";
 import type { LaneConfig, RuntimeKind } from "./config/types";
 import { AgentMeshDaemon } from "./daemon/agent-mesh-daemon";
@@ -14,6 +14,7 @@ import {
 } from "./daemon/host-daemon";
 import { runTui } from "./tui/app";
 import { runClaudeChannelMcp } from "./runtime/claude-channel-mcp";
+import { releaseLaneSession } from "./runtime/attach";
 import { runRuntimeObserver } from "./runtime/observer";
 import { ensureAttachTarget, selfCommand } from "./runtime/attach";
 import { runDiscordDriver } from "./channel-driver/discord";
@@ -579,6 +580,15 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
     // `lane add` refuses it because this tool sends create_only; the Hub still
     // allows an operator to re-register it, with the key back to pending.
     if (removedIdentity) {
+      // The session `attach` opened outlives the lane otherwise. Only the
+      // Claude supervisor ever killed one, so an Antigravity agent was left
+      // with `agy` running in a session belonging to a lane that no longer
+      // existed -- found on a development host burning a seventh of a core
+      // after `lane list` already printed `[]`.
+      const session = releaseLaneSession(removedIdentity);
+      if (session === "closed") {
+        process.stderr.write(`Closed tmux session ${laneTmuxSession(removedIdentity)}.\n`);
+      }
       process.stderr.write(
         `Mesh identity ${removedIdentity} remains registered with the Hub. ` +
           `This host keeps its key, so the same agent can be added here again. ` +

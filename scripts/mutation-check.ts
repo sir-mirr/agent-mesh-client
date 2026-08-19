@@ -128,6 +128,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "`attach` opens a tmux session for every runtime and only the Claude supervisor ever killed one. Removing an Antigravity agent left `agy` running at 13.6% CPU in a session belonging to a lane that `lane list` no longer reported. Three strays were found on a development host, and the machine stopped running hot when they were closed.",
+    file: "src/runtime/attach.ts",
+    find: '  if (!hasSession(tmux, session)) return "absent";',
+    replace: '  if (!hasSession(tmux, session)) return "closed";',
+    command: ["bun", "test", "test/lane-session-release.test.ts"],
+    evidence: "lane session release > and says so when there was nothing to close",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",

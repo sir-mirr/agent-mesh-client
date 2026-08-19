@@ -12,7 +12,7 @@ import { probeHub, resolveHubEndpoints, type HubEndpoints } from "../hub/endpoin
 import { lookupAgentIdentity } from "../hub/provisioning";
 import { SecretStore } from "../config/secrets";
 import { IdentityKeyManager } from "../identity/key-manager";
-import { ensureAttachTarget, selfCommand } from "../runtime/attach";
+import { ensureAttachTarget, releaseLaneSession, selfCommand } from "../runtime/attach";
 import { installUserService } from "../service/user-service";
 import { IDENTITY_RE } from "@agent-mesh/contracts";
 
@@ -1036,6 +1036,10 @@ async function agentDetail(
           throw error;
         }
         if (confirm !== "y") continue;
+        // The same release the CLI does. A guard that lives in one removal path
+        // is a guard the other one walks around, and both are how an agent gets
+        // removed here.
+        releaseLaneSession(config.lanes[index]!.identity);
         config.lanes.splice(index, 1);
       }
       await store.save(config);

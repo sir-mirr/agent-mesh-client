@@ -88,6 +88,29 @@ function createSession(
  * Throws `AttachUnavailableError` when the caller should show the reason
  * rather than open a terminal.
  */
+/**
+ * Let go of the tmux session a removed agent left behind.
+ *
+ * `attach` creates `mesh-lane-<identity>` for any runtime, but only the Claude
+ * supervisor kills one, and it kills its own. Removing a Codex agent looked
+ * clean because its client exits when the app-server it is talking to does --
+ * incidental, not teardown. An Antigravity agent leaves `agy` running in a
+ * session nobody owns: measured on this host at 13.6% CPU ten seconds after the
+ * lane was gone and `lane list` printed `[]`.
+ *
+ * Returns what happened rather than nothing, because "removed" and "there was
+ * nothing to remove" are different answers and the caller is about to tell a
+ * person which one it was.
+ */
+export function releaseLaneSession(identity: string): "closed" | "absent" | "no-tmux" {
+  const tmux = Bun.which("tmux");
+  if (!tmux) return "no-tmux";
+  const session = laneTmuxSession(identity);
+  if (!hasSession(tmux, session)) return "absent";
+  Bun.spawnSync([tmux, "kill-session", "-t", session], { stdout: "ignore", stderr: "ignore" });
+  return "closed";
+}
+
 export async function ensureAttachTarget(context: AttachContext): Promise<string> {
   const tmux = tmuxOrThrow();
   const session = laneTmuxSession(context.lane.identity);
