@@ -164,6 +164,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The runner spawned the harness from the platform author's working tree. Over one evening that tree was two behind with two files modified, then clean and one ahead, then two behind again — and one run caught it mid-mutation and reported 10/18 failing on signatures, a defect present in no commit. Aligning a checkout someone else pointed at would be the same mistake with the write turned on.",
+    file: "e2e/platform-checkout.ts",
+    find: '  return override === undefined || override === "";',
+    replace: "  return true;",
+    command: ["bun", "test", "test/platform-checkout.test.ts"],
+    evidence: "platform checkout > and a checkout someone pointed at is never moved",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",

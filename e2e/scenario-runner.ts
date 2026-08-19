@@ -57,6 +57,7 @@ import {
   type Step,
 } from "@agent-mesh/contracts";
 import { refusesDirtyTree } from "./dirty-tree";
+import { mayAlign, missingCheckoutMessage } from "./platform-checkout";
 import { passFirstLoginGate } from "./first-login-gate";
 
 /**
@@ -68,9 +69,47 @@ import { passFirstLoginGate } from "./first-login-gate";
  * tree was old. Which tree answered is part of the result, which is why the
  * report prints the revision the ready file declares.
  */
+/**
+ * Bring the owned checkout to `origin/main` before anything measures it.
+ *
+ * Done once, at start, so every mesh in a run sees the same tree. It refuses a
+ * dirty checkout rather than discarding work -- this one should never be dirty,
+ * and if it is, something is using it in a way nobody wrote down.
+ */
+function alignPlatformCheckout(): void {
+  if (!existsSync(PLATFORM)) {
+    process.stderr.write(`${missingCheckoutMessage(PLATFORM)}\n`);
+    process.exit(2);
+  }
+  if (!mayAlign(PLATFORM_OVERRIDE)) return;
+  const run = (...args: string[]) => Bun.spawnSync(["git", "-C", PLATFORM, ...args]);
+  if (run("status", "--porcelain").stdout.toString().trim() !== "") {
+    process.stderr.write(
+      `${PLATFORM} has uncommitted changes. It is this runner's checkout and nothing should be ` +
+        `editing it; aligning would discard whatever that is.\n`,
+    );
+    process.exit(2);
+  }
+  const fetched = run("fetch", "--quiet", "origin");
+  if (fetched.exitCode !== 0) {
+    process.stderr.write(
+      `git fetch failed in ${PLATFORM}: ${fetched.stderr.toString().trim()}\n` +
+        `The run would measure whatever was last fetched, which is not what origin/main says.\n`,
+    );
+    process.exit(2);
+  }
+  const moved = run("checkout", "--quiet", "--detach", "origin/main");
+  if (moved.exitCode !== 0) {
+    process.stderr.write(`git checkout origin/main failed: ${moved.stderr.toString().trim()}\n`);
+    process.exit(2);
+  }
+}
+
+const PLATFORM_OVERRIDE = process.env.AGENT_MESH_E2E_PLATFORM;
 const PLATFORM =
-  process.env.AGENT_MESH_E2E_PLATFORM ??
-  join(import.meta.dir, "..", "..", "agent-mesh-platform-main");
+  PLATFORM_OVERRIDE && PLATFORM_OVERRIDE !== ""
+    ? PLATFORM_OVERRIDE
+    : join(import.meta.dir, "..", "..", "agent-mesh-platform-e2e");
 
 /**
  * There is no skip list, and § 17.3 no longer permits one.
@@ -840,6 +879,8 @@ async function runScenario(
     steps,
   };
 }
+
+alignPlatformCheckout();
 
 const only = process.argv.slice(2).find((argument) => !argument.startsWith("--"));
 const selected = only ? E2E_SCENARIOS.filter((s) => s.id === only) : E2E_SCENARIOS;
