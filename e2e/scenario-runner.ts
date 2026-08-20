@@ -794,21 +794,43 @@ async function runStep(
     }
 
     case "http": {
-      // `as` names an authority, not a base URL: the operator session belongs to
-      // the admin service, and both `none` and a signed participant address the
-      // hub. A signed caller needs an identity this run generated, since the
-      // signature is over a key no scenario can carry.
-      const admin = step.as === "admin";
+      // `as` names an authority; the **path** names the service. The comment
+      // here used to say the first half and the code did neither: the base came
+      // from `as`, so `/api/v1/admin/...` could only be addressed by an operator
+      // session. That made "what does this operator route answer someone with no
+      // session" unstatable — the refusal half of every authorization pair, and
+      // the only half a caller without credentials can observe.
+      //
+      // The hub's REST surface is small and enumerable -- `rest/*.ts` plus the
+      // two routes in its `main.ts` -- so it is the closed set and everything
+      // else belongs to the admin service. A prefix list of admin paths was
+      // tried first and was wrong within the hour: `/api/v1/audit/events` is
+      // served there too, and an unauthenticated call to it reached the hub and
+      // got a 404 that read like a missing route.
+      //
+      // `/api/v1/agents` is on both. It stays with the hub, which is what
+      // E2E-PROXY-001 addresses unauthenticated. A hub route added later and
+      // not listed here goes to the admin service and 404s -- loud, and the
+      // fix is one line.
+      const HUB_PATHS = [
+        "/api/v1/agents",
+        "/api/v1/capabilities",
+        "/api/v1/limits",
+        "/api/v1/mailbox",
+        "/api/v1/rpc",
+      ];
+      const adminService = !HUB_PATHS.some((prefix) => step.path.startsWith(prefix));
+      const asAdmin = step.as === "admin";
       const signedBy = typeof step.as === "object" && step.as !== null ? step.as.signedBy : null;
       const signer = signedBy ? registry.get(signedBy) : null;
       if (signedBy && !signer) fail(`${signedBy} was never provisioned in this run`);
       const got = await http(
         signer ?? null,
-        admin ? mesh.baseUrl : mesh.apiHttp,
+        adminService || asAdmin ? mesh.baseUrl : mesh.apiHttp,
         step.method,
         step.path,
         step.body,
-        admin ? await adminCookie(mesh) : undefined,
+        asAdmin ? await adminCookie(mesh) : undefined,
       );
       assertHttp(step.expect, got);
       applyBind(step.bind, got.body, bindings);
