@@ -23,6 +23,18 @@ describe("contract surface", () => {
     ])).toEqual([]);
   });
 
+  // A platform test file changed in the same range as its source, and the metric
+  // counted both -- reporting that a run might have asked something of changed
+  // code when half of what changed was the platform checking itself.
+  test("and a test file is not code a scenario reaches", () => {
+    expect(touchesSurface([
+      "packages/http/src/main.in-process.test.ts",
+      "packages/hub/test/signature.test.ts",
+    ])).toEqual([]);
+    // The source beside it still counts.
+    expect(touchesSurface(["packages/http/src/main.ts"])).toHaveLength(1);
+  });
+
   test("a mixed range reports only the parts on the path", () => {
     expect(touchesSurface([
       "packages/http/src/ui/chat.ts",

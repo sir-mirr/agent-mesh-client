@@ -218,6 +218,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "The surface metric counted the platform's own test files. A range reported `surface 2` where one of the two was `main.in-process.test.ts` — saying a run might have asked something of changed code when half of what changed was the platform checking itself. The metric already over-counts; this was over-counting in a way that named the wrong thing.",
+    file: "scripts/contract-surface.ts",
+    find: "  /\\.test\\.ts$/,",
+    replace: "",
+    command: ["bun", "test", "test/contract-surface.test.ts"],
+    evidence: "contract surface > and a test file is not code a scenario reaches",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",

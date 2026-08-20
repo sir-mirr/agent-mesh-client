@@ -17,7 +17,16 @@
  * Its browser UI is not on that path: no scenario loads a screen.
  */
 const SURFACE = [/^packages\/hub\/src\//, /^packages\/http\/src\//];
-const NOT_SURFACE = [/^packages\/http\/src\/ui\//];
+const NOT_SURFACE = [
+  /^packages\/http\/src\/ui\//,
+  // A test file is not code a scenario reaches. Counting it inflated a range to
+  // `surface 2` where one of the two was `main.in-process.test.ts` — the metric
+  // said the run might have asked something of changed code when half of what
+  // changed was the platform's own checking. It errs toward over-counting, so
+  // this narrows it toward the truth rather than away.
+  /\.test\.ts$/,
+  /^packages\/[^/]+\/test\//,
+];
 
 export function touchesSurface(paths: readonly string[]): string[] {
   return paths.filter(
