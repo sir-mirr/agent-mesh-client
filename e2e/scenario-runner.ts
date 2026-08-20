@@ -616,7 +616,16 @@ function assertHttp(expect: ExpectHttp | undefined, got: HttpOutcome): void {
   }
 }
 
-function assertRpc(expect: { error?: number | null; dataCode?: string } | undefined, got: RpcOutcome): void {
+function assertRpc(
+  expect:
+    | {
+        error?: number | null;
+        dataCode?: string;
+        data?: Record<string, string | number | boolean | null>;
+      }
+    | undefined,
+  got: RpcOutcome,
+): void {
   if (!expect) return;
   if (expect.error === null) {
     if (got.error) fail(`expected success, got error ${short(got.error)}`);
@@ -625,6 +634,21 @@ function assertRpc(expect: { error?: number | null; dataCode?: string } | undefi
   }
   if (expect.dataCode !== undefined && got.error?.data?.code !== expect.dataCode) {
     fail(`expected data.code ${expect.dataCode}, got ${short(got.error)}`);
+  }
+  // Dotted paths into `error.data`, the same shape and the same restraint as
+  // `ExpectHttp.body`. The contract made `key_status` a MUST before anything
+  // could assert it, so the two states the clause exists to separate were
+  // indistinguishable to the only thing that checks the clause.
+  for (const [path, wanted] of Object.entries(expect.data ?? {})) {
+    // `atPath`, not a second walker: two implementations of "absent or null"
+    // drift, and this one would drift toward whichever refusal was written last.
+    const { found, value } = atPath(got.error?.data, path);
+    if (wanted === null) {
+      if (found && value !== null) fail(`expected no data.${path}, got ${JSON.stringify(value)}`);
+      continue;
+    }
+    if (!found) fail(`expected data.${path} = ${JSON.stringify(wanted)}, but the error carries no ${path}: ${short(got.error)}`);
+    if (value !== wanted) fail(`expected data.${path} = ${JSON.stringify(wanted)}, got ${JSON.stringify(value)}`);
   }
 }
 
