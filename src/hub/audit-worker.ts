@@ -11,6 +11,7 @@ import type { IdentityKeyManager } from "../identity/key-manager";
 import type { LaneOutbox } from "../outbox/lane-outbox";
 import type { StoredAuditEvent } from "../outbox/types";
 import { HubRpcError, type MeshClient } from "./mesh-client";
+import { abortableSleep } from "../util/abortable-sleep";
 
 /**
  * What to record for an operator, as opposed to what to do about it.
@@ -327,21 +328,13 @@ export class AuditWorker {
   }
 
   async #wait(milliseconds: number): Promise<void> {
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, milliseconds);
-      this.#wake = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      this.#abort.signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        { once: true },
-      );
+    // This loop runs once a second for the life of a lane. The inline version
+    // of it added an `"abort"` listener per pass and removed none, so the
+    // signal held one listener per second of uptime -- see
+    // `src/util/abortable-sleep.ts` for what that cost and why it is not the
+    // ramp it was found hunting.
+    await abortableSleep(milliseconds, this.#abort.signal, (wake) => {
+      this.#wake = wake;
     });
-    this.#wake = null;
   }
 }

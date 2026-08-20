@@ -385,6 +385,15 @@ const MUTATIONS: Entry[] = [
     // fired, not merely that something did.
     evidence: "harness applied receive_lease_seconds=3, scenario requires 2",
   },
+  {
+    defect:
+      "Two copies of the same twelve-line sleep lived in the hub loops, one releasing its abort listener and one not. The leaking copy runs once a second for the life of a lane, so it held one listener per second of uptime -- unbounded, permanently retained, and invisible in RSS because the list lives native-side. Found by five independent readers hunting a CPU ramp; all five refuted it as the cause and all five confirmed the leak.",
+    file: "src/util/abortable-sleep.ts",
+    find: '      signal.removeEventListener("abort", onAbort);\n',
+    replace: "",
+    command: ["bun", "test", "test/abortable-sleep.test.ts"],
+    evidence: "the timer winning releases the abort listener, every pass",
+  },
 ];
 
 /**

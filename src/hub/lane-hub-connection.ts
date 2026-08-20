@@ -6,6 +6,7 @@ import type { LaneOutbox } from "../outbox/lane-outbox";
 import { AuditWorker, type AuditWorkerStatus } from "./audit-worker";
 import { resolveHubEndpoints } from "./endpoints";
 import { MeshClient } from "./mesh-client";
+import { abortableSleep, untilAborted } from "../util/abortable-sleep";
 import {
   AgentIdentityConflictError,
   lookupAgentIdentity,
@@ -174,10 +175,7 @@ export class LaneHubConnection {
             state: "conflict",
             lastError: `${error.code}: ${error.message}`,
           };
-          await new Promise<void>((resolve) => {
-            if (this.#abort.signal.aborted) return resolve();
-            this.#abort.signal.addEventListener("abort", () => resolve(), { once: true });
-          });
+          await untilAborted(this.#abort.signal);
           break;
         }
         const approval = this.mesh.status.state === "approval";
@@ -196,17 +194,9 @@ export class LaneHubConnection {
   }
 
   async #sleep(milliseconds: number): Promise<void> {
-    if (this.#abort.signal.aborted) return;
-    await new Promise<void>((resolve) => {
-      const onAbort = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(() => {
-        this.#abort.signal.removeEventListener("abort", onAbort);
-        resolve();
-      }, milliseconds);
-      this.#abort.signal.addEventListener("abort", onAbort, { once: true });
-    });
+    // The correct half of the pair this helper was extracted from. Kept as a
+    // call rather than as its own copy, because the copy that drifted was
+    // indistinguishable from this one until someone diffed them.
+    await abortableSleep(milliseconds, this.#abort.signal);
   }
 }
