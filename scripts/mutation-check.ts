@@ -403,6 +403,15 @@ const MUTATIONS: Entry[] = [
     command: ["bun", "test", "test/loop-meter.test.ts"],
     evidence: "all three one-second loops count their passes",
   },
+  {
+    defect:
+      "Two scenarios sharing an id both get selected, both run and both report, so the tally that guards the count sees a perfect run. `--only` on that id then runs two unrelated scenarios. E2E-AUTH-KEYSTREAM-002 was used twice here and the platform side found it, because nothing on this side could.",
+    file: "e2e/scenario-runner.ts",
+    find: "const duplicated = duplicateIds(E2E_SCENARIOS);",
+    replace: "const duplicated: string[] = [];",
+    command: ["bun", "test", "test/scenario-ids.test.ts"],
+    evidence: "the runner refuses before it selects",
+  },
 ];
 
 /**

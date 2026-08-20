@@ -60,6 +60,7 @@ import { refusesDirtyTree } from "./dirty-tree";
 import { mayAlign, missingCheckoutMessage } from "./platform-checkout";
 import { tallyMismatch } from "./scenario-tally";
 import { passFirstLoginGate } from "./first-login-gate";
+import { duplicateIdMessage, duplicateIds } from "./scenario-ids";
 
 /**
  * The platform checkout whose harness this run drives.
@@ -984,6 +985,14 @@ async function runScenario(
 alignPlatformCheckout();
 
 const only = process.argv.slice(2).find((argument) => !argument.startsWith("--"));
+// Before anything is selected: two scenarios sharing an id would both be
+// selected, both run and both report, so the tally that guards the count sees a
+// perfect run. `--only` on that id would silently run two unrelated scenarios.
+const duplicated = duplicateIds(E2E_SCENARIOS);
+if (duplicated.length > 0) {
+  process.stderr.write(`${duplicateIdMessage(duplicated, E2E_SCENARIOS.length)}\n`);
+  process.exit(2);
+}
 const selected = only ? E2E_SCENARIOS.filter((s) => s.id === only) : E2E_SCENARIOS;
 if (selected.length === 0) {
   process.stderr.write(`no scenario matches ${only}\n`);
