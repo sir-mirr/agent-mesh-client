@@ -380,9 +380,25 @@ async function rpc(
   expectDelivered: number | null = null,
   /** Keep the socket open and return it, for `hold`. */
   keepOpen = false,
-): Promise<RpcOutcome & { delivered: number; held: Held | null }> {
+  /**
+   * Wait for the hub to close, and report the code it sent.
+   *
+   * The refusals in § 8.1 answer and then close about ten milliseconds later. A
+   * runner that reads the answer and drops the socket never observes the second
+   * half, so a hub that refused and then held the socket open forever would pass
+   * every scenario about the refusal.
+   */
+  awaitClose = false,
+): Promise<RpcOutcome & { delivered: number; held: Held | null; closeCode: number | null }> {
   const socket = new WebSocket(mesh.rpcWs);
   let kept: Held | null = null;
+  let closeCode: number | null = null;
+  const closed = new Promise<void>((resolve) => {
+    socket.addEventListener("close", (event) => {
+      closeCode = (event as CloseEvent).code;
+      resolve();
+    }, { once: true });
+  });
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("hub socket open timed out")), 15_000);
@@ -455,9 +471,15 @@ async function rpc(
       // arrive after this call returns, and can clear it without the closure
       // above losing track.
       kept = { socket, since: () => delivered - cleared, clear: () => (cleared = delivered) };
-      return { ...outcome, delivered, held: kept };
+      return { ...outcome, delivered, held: kept, closeCode };
     }
-    return { ...outcome, delivered, held: null };
+    // Only where nothing is being held: a socket the scenario keeps open is one
+    // the hub is not expected to close, and waiting on it would spend the
+    // timeout on every held connect.
+    if (awaitClose) {
+      await Promise.race([closed, new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
+    }
+    return { ...outcome, delivered, held: null, closeCode };
   } finally {
     if (!kept) {
       try {
@@ -710,7 +732,13 @@ async function runStep(
     }
 
     case "connect": {
-      const identity = registry.get(step.identity);
+      // A correctly signed stranger: a key this run generated and never sent to
+      // `POST /api/v1/agents`, which is the one state § 8.1 answers -32011 to.
+      // Deliberately not recorded in the registry -- it is not an identity the
+      // mesh knows, and a later step naming it should fail as unprovisioned.
+      const identity = step.ephemeralKey === true
+        ? makeIdentity(step.identity)
+        : registry.get(step.identity);
       if (!identity) fail(`${step.identity} was never provisioned in this run`);
       const got = await rpc(
         mesh,
@@ -719,8 +747,15 @@ async function runStep(
         { identity: step.identity },
         step.expectDelivered ?? null,
         step.hold === true,
+        step.expectClose !== undefined,
       );
       assertRpc(step.expect, got);
+      if (step.expectClose !== undefined && got.closeCode !== step.expectClose) {
+        fail(
+          `expected the hub to close with ${step.expectClose}, got ` +
+            `${got.closeCode === null ? "no close within 5s" : got.closeCode}`,
+        );
+      }
       if (step.expectDelivered !== undefined && got.delivered !== step.expectDelivered) {
         fail(`expected ${step.expectDelivered} pushed message(s) after connect, got ${got.delivered}`);
       }
