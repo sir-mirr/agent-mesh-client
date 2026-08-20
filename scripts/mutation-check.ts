@@ -394,6 +394,15 @@ const MUTATIONS: Entry[] = [
     command: ["bun", "test", "test/abortable-sleep.test.ts"],
     evidence: "the timer winning releases the abort listener, every pass",
   },
+  {
+    defect:
+      "A meter nothing calls reports zeroes, and zeroes are what a healthy idle daemon looks like. The delivery loop losing its counter would leave `daemon status` answering that the loop never ran -- the same reading it gives for a loop that genuinely never ran.",
+    file: "src/daemon/agent-mesh-daemon.ts",
+    find: '    loopMeter.countPass("delivery");\n',
+    replace: "",
+    command: ["bun", "test", "test/loop-meter.test.ts"],
+    evidence: "all three one-second loops count their passes",
+  },
 ];
 
 /**

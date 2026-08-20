@@ -12,6 +12,7 @@ import type { LaneOutbox } from "../outbox/lane-outbox";
 import type { StoredAuditEvent } from "../outbox/types";
 import { HubRpcError, type MeshClient } from "./mesh-client";
 import { abortableSleep } from "../util/abortable-sleep";
+import { loopMeter } from "../daemon/loop-meter";
 
 /**
  * What to record for an operator, as opposed to what to do about it.
@@ -131,6 +132,7 @@ export class AuditWorker {
 
   async #run(): Promise<void> {
     while (!this.#abort.signal.aborted) {
+      loopMeter.countPass("audit");
       let didWork = false;
       if (this.mesh.status.state === "connected" && this.mesh.status.audit) {
         for (const event of this.outbox.listDue()) {

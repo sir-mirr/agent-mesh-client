@@ -11,6 +11,7 @@ import { createRuntimeAdapter } from "../runtime/factory";
 import type { RuntimeTurn } from "../runtime/inbox";
 import { ClaudeSupervisor } from "../runtime/claude-supervisor";
 import { ChannelProcessSupervisor } from "../channel-driver/supervisor";
+import { loopMeter } from "./loop-meter";
 
 export interface AgentMeshDaemonOptions {
   configFile: string;
@@ -400,6 +401,7 @@ export class AgentMeshDaemon {
 
   async #drainPendingDeliveries(): Promise<void> {
     if (this.#deliveryDrainRunning) return;
+    loopMeter.countPass("delivery");
     this.#deliveryDrainRunning = true;
     try {
       for (const supervisor of this.#channelSupervisors.values()) {

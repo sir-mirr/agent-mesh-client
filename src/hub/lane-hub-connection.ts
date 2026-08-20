@@ -7,6 +7,7 @@ import { AuditWorker, type AuditWorkerStatus } from "./audit-worker";
 import { resolveHubEndpoints } from "./endpoints";
 import { MeshClient } from "./mesh-client";
 import { abortableSleep, untilAborted } from "../util/abortable-sleep";
+import { loopMeter } from "../daemon/loop-meter";
 import {
   AgentIdentityConflictError,
   lookupAgentIdentity,
@@ -166,6 +167,7 @@ export class LaneHubConnection {
           !this.#abort.signal.aborted &&
           this.mesh.status.state === "connected"
         ) {
+          loopMeter.countPass("hub-watch");
           await this.#sleep(1_000);
         }
       } catch (error) {

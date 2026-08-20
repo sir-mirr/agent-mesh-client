@@ -16,6 +16,7 @@ import {
   type JsonRpcRequest,
 } from "../channel-rpc/json-rpc";
 import { encodeFrame, NdjsonDecoder } from "../channel-rpc/ndjson";
+import { loopMeter, type LoopMeterSnapshot } from "./loop-meter";
 
 export interface HostDaemonOptions {
   runtimeDirectory: string;
@@ -33,6 +34,7 @@ export interface HostDaemonStatus {
     socket_path: string;
     active_drivers: number;
   }>;
+  loops: LoopMeterSnapshot;
 }
 
 async function probeSocket(path: string): Promise<boolean> {
@@ -98,6 +100,10 @@ export class HostDaemon {
         socket_path: lane.socketPath,
         active_drivers: lane.activeDriverCount,
       })),
+      // The daemon is the only thing that can say which of its one-second loops
+      // is getting more expensive; `ps` gives one number for the process and
+      // the shipped binary is stripped, so `sample` cannot name a frame.
+      loops: loopMeter.snapshot(),
     };
   }
 
