@@ -326,7 +326,26 @@ async function http(
     ...(payload ? { body: payload } : {}),
     signal: AbortSignal.timeout(20_000),
   });
-  const text = await response.text();
+  // A stream answers its status and then stays open. Reading to the end waits
+  // for a close that is not coming, and the scenario times out having already
+  // been told what it asked -- so three routes that publish over SSE could be
+  // asserted for their refusal and never for their pass.
+  //
+  // Bounded rather than skipped: the body is still read when there is one, and
+  // a route that hangs *instead* of answering never gets here, because `fetch`
+  // itself resolves on the headers and its own timeout covers that.
+  const text = await Promise.race([
+    response.text(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_000)),
+  ]);
+  if (text === null) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Already gone; the status is what the scenario asked for.
+    }
+    return { status: response.status, body: { streaming: true } };
+  }
   let parsed: unknown = text;
   try {
     parsed = JSON.parse(text);
