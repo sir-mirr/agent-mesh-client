@@ -412,6 +412,15 @@ const MUTATIONS: Entry[] = [
     command: ["bun", "test", "test/scenario-ids.test.ts"],
     evidence: "the runner refuses before it selects",
   },
+  {
+    defect:
+      "`streaming: true` meant only that the body had not ended after two seconds. No byte was read and no header was looked at, so a route answering `application/json` over a connection it simply kept open satisfied a stream assertion. Worse, the first version raced `response.text()`, which takes the body lock and keeps it: the `getReader()` after it threw and the `cancel()` after it never settled. Nothing in the set asserts a streaming route at 200, so that path had never run.",
+    file: "e2e/scenario-runner.ts",
+    find: '          content_type: response.headers.get("content-type"),\n          first_frame: observed.firstFrame,\n',
+    replace: "",
+    command: ["bun", "test", "test/stream-assertion.test.ts"],
+    evidence: "the runner reports both facts, not only that it did not end",
+  },
 ];
 
 /**

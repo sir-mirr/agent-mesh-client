@@ -328,33 +328,94 @@ async function http(
     signal: AbortSignal.timeout(20_000),
   });
   // A stream answers its status and then stays open. Reading to the end waits
-  // for a close that is not coming, and the scenario times out having already
-  // been told what it asked -- so three routes that publish over SSE could be
-  // asserted for their refusal and never for their pass.
+  // for a close that is not coming, so three routes that publish over SSE could
+  // be asserted for their refusal and never for their pass.
   //
-  // Bounded rather than skipped: the body is still read when there is one, and
-  // a route that hangs *instead* of answering never gets here, because `fetch`
-  // itself resolves on the headers and its own timeout covers that.
-  const text = await Promise.race([
-    response.text(),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_000)),
-  ]);
-  if (text === null) {
-    try {
-      await response.body?.cancel();
-    } catch {
-      // Already gone; the status is what the scenario asked for.
+  // Read through one reader, never `response.text()`. The first version raced
+  // `text()` against a timer, and `text()` holds the body lock whether or not it
+  // ever resolves: after the timer won, `getReader()` threw `ReadableStream is
+  // locked` (measured) and `body.cancel()` did not throw but never settled
+  // (measured, 5s). The `catch` around the cancel could not have helped — an
+  // await that hangs is not an await that throws. Nothing in the set asserts a
+  // streaming route at 200, so that path had never once run; the first scenario
+  // to try would have stopped the runner where it stood.
+  const observed = await readBounded(response);
+  return {
+    status: response.status,
+    body: observed.ended
+      ? observed.parsed
+      : {
+          // `streaming: true` on its own means only "the body had not ended",
+          // which a route hanging for the wrong reason satisfies just as well.
+          // The declared content type and the opening frame are what tell a
+          // stream from a hang.
+          streaming: true,
+          content_type: response.headers.get("content-type"),
+          first_frame: observed.firstFrame,
+        },
+  };
+}
+
+interface BoundedBody {
+  ended: boolean;
+  parsed: unknown;
+  firstFrame: string | null;
+}
+
+/**
+ * Read a body for at most two seconds, then let go of it.
+ *
+ * The cancel is not tidiness: on the platform side the only cleanup an SSE
+ * client gets is the request's abort signal, so a reader that walks away
+ * without cancelling leaves the registration and its heartbeat alive for the
+ * rest of the process.
+ */
+async function readBounded(response: Response, budgetMs = 2_000): Promise<BoundedBody> {
+  const reader = response.body?.getReader();
+  if (!reader) return { ended: true, parsed: null, firstFrame: null };
+  const chunks: Uint8Array[] = [];
+  const deadline = Date.now() + budgetMs;
+  let ended = false;
+  try {
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      const step = await Promise.race([
+        reader.read(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), remaining)),
+      ]);
+      if (!step) break;
+      if (step.done) {
+        ended = true;
+        break;
+      }
+      if (step.value) chunks.push(step.value);
     }
-    return { status: response.status, body: { streaming: true } };
+  } catch {
+    // A body that errors mid-read is still evidence of what the status said.
+  } finally {
+    if (!ended) {
+      try {
+        await reader.cancel();
+      } catch {
+        // Already gone.
+      }
+    }
   }
+  const decoder = new TextDecoder();
+  const text = chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join("") + decoder.decode();
+  const firstFrame = chunks.length > 0 ? new TextDecoder().decode(chunks[0]).slice(0, 200) : null;
+  if (!ended) return { ended: false, parsed: text, firstFrame };
   let parsed: unknown = text;
   try {
     parsed = JSON.parse(text);
   } catch {
     // A non-JSON body is still evidence; the assertion decides whether it matters.
   }
-  return { status: response.status, body: parsed };
+  return { ended: true, parsed, firstFrame };
 }
+
+
 
 /**
  * A socket a scenario is deliberately keeping open.
