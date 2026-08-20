@@ -1,0 +1,33 @@
+import { describe, expect, test } from "bun:test";
+import { touchesSurface } from "../scripts/contract-surface";
+
+/**
+ * `18/18` twice is two different facts: the run asked its questions of changed
+ * code, or of code nothing changed in. Counting both as coverage overstates it,
+ * and the call used to be made by reading commit titles.
+ */
+describe("contract surface", () => {
+  test("hub and service code is on the path the scenarios take", () => {
+    expect(touchesSurface(["packages/hub/src/rest/agents.ts"])).toHaveLength(1);
+    expect(touchesSurface(["packages/http/src/main.ts"])).toHaveLength(1);
+  });
+
+  // Without this everything counts as surface and the distinction PM asked for
+  // disappears -- which is the same as never making it.
+  test("and screens, docs and scripts are not", () => {
+    expect(touchesSurface([
+      "packages/http/src/ui/admin.ts",
+      "docs/architecture.md",
+      "scripts/e2e-harness.ts",
+      "packages/web/src/App.tsx",
+    ])).toEqual([]);
+  });
+
+  test("a mixed range reports only the parts on the path", () => {
+    expect(touchesSurface([
+      "packages/http/src/ui/chat.ts",
+      "packages/hub/src/signature.ts",
+      "README.md",
+    ])).toEqual(["packages/hub/src/signature.ts"]);
+  });
+});
