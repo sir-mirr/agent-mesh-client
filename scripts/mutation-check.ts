@@ -200,6 +200,15 @@ const MUTATIONS: Entry[] = [
   },
   {
     defect:
+      "Stripping whole comment lines stopped an assertion being satisfied by the comment above a step. A comment on the end of a line survived it: `- run: echo hi  # scripts/set-version.ts` satisfied both a contains check and a regex anchored on `run:` — measured, both true. The platform hit the mirror image the same night, treating a string that held a comment opener as a comment and hiding a hundred lines.",
+    file: "test/support/code-only.ts",
+    find: "      const at = line.indexOf(` ${marker}`);",
+    replace: "      const at = -1;",
+    command: ["bun", "test", "test/code-only.test.ts"],
+    evidence: "code only > a trailing comment cannot satisfy an assertion about the line",
+  },
+  {
+    defect:
       "Listening was not the fix. An `end` handler that returns instead of leaving measured 90.1% CPU -- the same spin, now with a handler in the file to suggest otherwise.",
     file: "src/tui/app.ts",
     find: "    process.exit(2);",

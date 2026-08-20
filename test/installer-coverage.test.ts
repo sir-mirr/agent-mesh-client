@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { codeOnly } from "./support/code-only";
 
 /**
  * The installer is served straight off `main`.
@@ -11,10 +12,7 @@ import { describe, expect, test } from "bun:test";
  */
 async function runnableLines(path: string): Promise<string> {
   const text = await Bun.file(path).text();
-  return text
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("#"))
-    .join("\n");
+  return codeOnly(text);
 }
 
 describe("installer coverage", () => {

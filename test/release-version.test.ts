@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { codeOnly } from "./support/code-only";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,9 +46,12 @@ describe("release version injection", () => {
   // code is not an assertion about the code.
   test("the release workflow calls this and holds no version logic of its own", async () => {
     const workflow = await Bun.file(".github/workflows/release.yml").text();
-    const steps = workflow.split("\n").filter((line) => !line.trim().startsWith("#"));
+    const steps = codeOnly(workflow).split("\n");
     expect(steps.some((line) => /^\s*-?\s*run:.*scripts\/set-version\.ts/.test(line))).toBe(true);
-    expect(steps.join("\n")).not.toContain("manifest.version =");
+    // Not-contains keeps the whole text: a hit inside a trailing comment should
+    // be reported, not stripped away before the check can see it.
+    expect(workflow.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n"))
+      .not.toContain("manifest.version =");
   });
   // The checks inside the build job run on the file that job just built. The
   // object a user gets is tarred, uploaded, merged across four jobs and attached
@@ -55,7 +59,7 @@ describe("release version injection", () => {
   // answering `0.1.0-dev.0`. Only something that downloads can catch it.
   test("the release downloads the published asset and asks it its version", async () => {
     const workflow = await Bun.file(".github/workflows/release.yml").text();
-    const steps = workflow.split("\n").filter((line) => !line.trim().startsWith("#")).join("\n");
+    const steps = codeOnly(workflow);
     expect(steps).toContain("gh release download");
     expect(steps).toContain("needs: publish");
     expect(steps).toMatch(/\$\(\.\/agent-mesh --version\)/);

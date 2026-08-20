@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { laneTmuxSession } from "../src/config/paths";
 import { releaseLaneSession } from "../src/runtime/attach";
+import { codeOnly } from "./support/code-only";
 
 /**
  * Removing an agent has to close the terminal it was living in.
@@ -52,9 +53,7 @@ describe("lane session release", () => {
   // around. Comment lines are stripped: prose naming the call is not the call.
   test("both removal paths call it", async () => {
     for (const file of ["src/cli.ts", "src/tui/app.ts"]) {
-      const code = (await Bun.file(file).text())
-        .split("\n")
-        .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"));
+      const code = codeOnly(await Bun.file(file).text(), "slash").split("\n");
       expect(code.some((line) => /releaseLaneSession\(/.test(line) && !line.includes("import")))
         .toBe(true);
     }
