@@ -61,6 +61,7 @@ import { mayAlign, missingCheckoutMessage } from "./platform-checkout";
 import { tallyMismatch } from "./scenario-tally";
 import { passFirstLoginGate } from "./first-login-gate";
 import { duplicateIdMessage, duplicateIds } from "./scenario-ids";
+import { hubServes } from "./hub-routes";
 
 /**
  * The platform checkout whose harness this run drives.
@@ -952,14 +953,9 @@ async function runStep(
       // E2E-PROXY-001 addresses unauthenticated. A hub route added later and
       // not listed here goes to the admin service and 404s -- loud, and the
       // fix is one line.
-      const HUB_PATHS = [
-        "/api/v1/agents",
-        "/api/v1/capabilities",
-        "/api/v1/limits",
-        "/api/v1/mailbox",
-        "/api/v1/rpc",
-      ];
-      const adminService = !HUB_PATHS.some((prefix) => step.path.startsWith(prefix));
+      // Which server answers, by method and path -- see `hub-routes.ts` for
+      // why the method matters and how reporting this blocked was my mistake.
+      const adminService = !hubServes(step.method, step.path);
       const asAdmin = step.as === "admin";
       const signedBy = typeof step.as === "object" && step.as !== null ? step.as.signedBy : null;
       const signer = signedBy ? registry.get(signedBy) : null;

@@ -394,4 +394,13 @@ export const MUTATIONS: Entry[] = [
     command: ["bun", "test", "test/stream-assertion.test.ts"],
     evidence: "the runner reports both facts, not only that it did not end",
   },
+  {
+    defect:
+      "One path is served by two servers, told apart by the method: `/api/v1/agents` is POST on the hub and GET on the http server. Routing by path alone sent the GET to the hub, which answered 405, and I reported the route as one the contract could not express. Dropping the method check puts it back.",
+    file: "e2e/hub-routes.ts",
+    find: "(route.method === undefined || route.method === method)",
+    replace: "true",
+    command: ["bun", "test", "test/hub-routes.test.ts"],
+    evidence: "one path, two servers, told apart by the method",
+  },
 ];
