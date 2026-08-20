@@ -211,8 +211,8 @@ const MUTATIONS: Entry[] = [
     defect:
       "Whether a run asked its questions of changed code was decided by reading commit titles — a prediction dressed as a measurement. Eleven runs reported 18/18; measuring the diffs showed eight of them touched nothing the scenarios reach. Counting those as coverage overstates it, and a surface matcher that says yes to everything erases the distinction entirely.",
     file: "scripts/contract-surface.ts",
-    find: 'const NOT_SURFACE = [/^packages\\/http\\/src\\/ui\\//];',
-    replace: "const NOT_SURFACE: RegExp[] = [];",
+    find: "  /^packages\\/http\\/src\\/ui\\//,",
+    replace: "",
     command: ["bun", "test", "test/contract-surface.test.ts"],
     evidence: "contract surface > and screens, docs and scripts are not",
   },
