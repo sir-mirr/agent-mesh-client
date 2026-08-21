@@ -52,7 +52,13 @@ const WRITE_PATTERNS = [
   /\brename\(/,
   /\bunlink\(/,
   /\bmkdir\(/,
-  /\bexec\(/,
+  // `database.exec(...)` runs DDL and is a write. `/pattern/.exec(text)` reads
+  // -- and the first version of this list did not tell them apart, so a
+  // function whose whole body was one regex match was reported as an unnamed
+  // writer. The lookbehind is the difference between the two receivers; the
+  // rule bending the code would have been renaming that function.
+  /(?<!\/)\.exec\(/,
+  /(?:^|[\s(=])exec\(/,
 ];
 
 const KEYWORDS = new Set([

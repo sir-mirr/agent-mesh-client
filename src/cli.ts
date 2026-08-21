@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import packageManifest from "../package.json";
-import { basename, resolve } from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { defaultLocations } from "./config/locations";
 import { appServerSocketPath, laneSocketPath, laneStorageName, laneTmuxSession } from "./config/paths";
 import { ConfigStore } from "./config/store";
@@ -24,6 +24,8 @@ import {
   lookupAgentIdentity,
   lookupRegisteredType,
 } from "./hub/provisioning";
+import { bundlePath, collectBundle } from "./diagnostics/bundle";
+import { ringDiagnostic } from "./diagnostics/ring-buffer";
 import { SecretStore } from "./config/secrets";
 import { IdentityKeyManager } from "./identity/key-manager";
 import {
@@ -64,6 +66,7 @@ Usage:
   agent-mesh service install|status|restart|stop|logs|uninstall
   agent-mesh up|down|restart|status|logs
   agent-mesh doctor
+  agent-mesh diagnostics bundle [--out PATH]
   agent-mesh paths lane-socket LANE_ID
 
 Global paths may be overridden with --config, --state-dir and --runtime-dir.
@@ -100,6 +103,7 @@ const VALUE_OPTIONS = new Set([
   "--token-file",
   "--account-ref",
   "--event-id",
+  "--out",
 ]);
 const BOOLEAN_OPTIONS = new Set(["--json", "--yes", "--acknowledge-risk"]);
 
@@ -150,10 +154,13 @@ function print(value: unknown): void {
 
 async function runDaemon(options: ParsedOptions): Promise<void> {
   const manualLanes = options.values.get("--lane") ?? [];
-  const diagnostic = (message: string, error?: unknown) => {
+  // The ring keeps; stderr still prints. Until this wrapper existed the
+  // buffer that a complaint needs was being written to a file only the
+  // machine's owner can read, and nowhere the client could hand over.
+  const diagnostic = ringDiagnostic("daemon", (message: string, error?: unknown) => {
     const detail = error instanceof Error ? `: ${error.message}` : "";
     process.stderr.write(`[agent-meshd] ${message}${detail}\n`);
-  };
+  });
   const daemon =
     manualLanes.length > 0
       ? new HostDaemon({
@@ -662,6 +669,25 @@ async function handleCommand(options: ParsedOptions): Promise<number | null> {
         ...(eventIds ? { event_ids: eventIds } : {}),
       }),
     );
+    return 0;
+  }
+  if (group === "diagnostics" && command === "bundle") {
+    const bundle = await collectBundle({
+      configFile: options.configFile,
+      stateDirectory: options.stateDirectory,
+      runtimeDirectory: options.runtimeDirectory,
+    });
+    const out = option(options, "--out") ?? bundlePath(options.stateDirectory);
+    await mkdir(dirname(out), { recursive: true, mode: 0o700 });
+    await writeFile(out, `${JSON.stringify(bundle, null, 2)}\n`, { mode: 0o600 });
+    // The path on stdout and the verdict beside it. A user is about to attach
+    // this file to a complaint, and `complete: false` in a file nobody opens
+    // is the same as no warning at all.
+    print({
+      path: out,
+      complete: bundle.complete,
+      incomplete_sections: bundle.incomplete_sections,
+    });
     return 0;
   }
   if (group === "doctor") {

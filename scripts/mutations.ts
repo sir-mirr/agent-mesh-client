@@ -56,6 +56,44 @@ if (!CONTRACT_PIN) throw new Error("package.json does not pin @agent-mesh/contra
 export const MUTATIONS: Entry[] = [
   {
     defect:
+      "The diagnostic ring masked `fields.body` while the same sentence sat in the free-text `message` two keys away -- measured by the planted-body test on the first version of the bundle. Masking by field name defends a body only where a body is a field.",
+    file: "src/diagnostics/ring-buffer.ts",
+    find: "      message: redactText(entry.message),",
+    replace: "      message: entry.message,",
+    command: ["bun", "test", "test/diagnostic-ring.test.ts"],
+    evidence: "diagnostic ring > a secret handed to the ring is masked before it is stored",
+  },
+  {
+    defect:
+      "A bundle that reads the installed package's version field reports the contract six tags behind: `node_modules/@agent-mesh/contracts` said 0.23.0 while the pin said v0.29.0 (measured 2026-08-21). Every complaint would be diagnosed against the wrong contract, with the confidence of a value that came from the package itself.",
+    file: "src/diagnostics/bundle.ts",
+    find: '  const spec = manifest.dependencies?.["@agent-mesh/contracts"];',
+    replace: '  const spec = "@agent-mesh/contracts#v0.23.0";',
+    command: ["bun", "test", "test/bundle-secrets.test.ts"],
+    evidence:
+      "diagnostic bundle secrets > the contract tag is read from the pin and not from the installed package",
+  },
+  {
+    defect:
+      "A collector that cannot reach the daemon has three honest answers and one dishonest one. Folding `absent` into `unreadable` tells a user to create a config file they already have -- the same empty-standing-in-for-unknown shape as the empty-list 200 the platform removed from /api/v1/admin/chat-audits/agents.",
+    file: "src/diagnostics/bundle.ts",
+    find: '  if (code === "ENOENT") return absent("no such file");',
+    replace: '  if (code === "ENOENT") return unreadable("no such file");',
+    command: ["bun", "test", "test/bundle-outcomes.test.ts"],
+    evidence: "bundle outcomes > a missing config file is absent, not an empty config",
+  },
+  {
+    defect:
+      "A ring that discards its beginning silently reads exactly like a ring whose beginning was quiet. The dropped counter is the only thing separating them, and nothing else in the bundle would notice it stopped counting.",
+    file: "src/diagnostics/ring-buffer.ts",
+    find: "      this.#dropped += 1;",
+    replace: "      this.#dropped += 0;",
+    command: ["bun", "test", "test/diagnostic-ring.test.ts"],
+    evidence:
+      "diagnostic ring > records outside the sixty-minute window are dropped oldest-first and counted",
+  },
+  {
+    defect:
       "Both READMEs stated the contract pin three tags behind, were corrected by hand, and drifted again within the hour. Nothing else in the repository reads those lines.",
     file: "package.json",
     find: `agent-mesh-contracts#v${CONTRACT_PIN}"`,
